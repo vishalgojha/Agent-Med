@@ -50,9 +50,14 @@ CREATE TABLE IF NOT EXISTS follow_ups (
   scheduled_at TEXT NOT NULL,
   sent_at TEXT,
   status TEXT NOT NULL DEFAULT 'scheduled',
+  delivery_status TEXT,
   retry_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
   provider_message_id TEXT,
+  delivered_at TEXT,
+  failed_at TEXT,
+  provider_error_code TEXT,
+  provider_error_message TEXT,
   dead_lettered_at TEXT,
   created_at TEXT NOT NULL,
   UNIQUE (patient_id, trigger, scheduled_at)
@@ -94,5 +99,6 @@ CREATE INDEX IF NOT EXISTS idx_prior_auths_patient_status ON prior_auths(patient
 CREATE INDEX IF NOT EXISTS idx_follow_ups_status_schedule ON follow_ups(status, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_retry_count ON follow_ups(status, retry_count, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_provider_message_id ON follow_ups(provider_message_id);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_delivery_status ON follow_ups(delivery_status);
 CREATE INDEX IF NOT EXISTS idx_follow_up_dead_letters_created ON follow_up_dead_letters(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_replay_executed ON replay_log(executed_at DESC);

@@ -27,9 +27,14 @@ export interface FollowUpRecord {
   scheduledAt: string;
   sentAt?: string;
   status: "scheduled" | "sent" | "failed" | "dead_letter";
+  deliveryStatus?: "queued" | "sent" | "delivered" | "undelivered" | "failed";
   retryCount?: number;
   lastError?: string;
   providerMessageId?: string;
+  deliveredAt?: string;
+  failedAt?: string;
+  providerErrorCode?: string;
+  providerErrorMessage?: string;
   deadLetteredAt?: string;
   createdAt: string;
 }

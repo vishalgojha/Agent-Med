@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import twilio from "twilio";
 import { runMigrations } from "./db/migrations.js";
 import { createIntent } from "./engine/intent.js";
 import { executeIntent } from "./engine/executor.js";
@@ -9,11 +10,12 @@ import { createCapabilityHandlers, createRuntimeDeps, RuntimeDeps } from "./runt
 import { listReplay, getReplayById, pruneReplayOlderThan } from "./engine/replay.js";
 import { CapabilityName, RiskLevel } from "./types.js";
 import { getPriorAuthById, listPriorAuths } from "./capabilities/prior-auth.js";
-import { listFollowUpDeadLetters, listFollowUps } from "./patients/store.js";
+import { listFollowUpDeadLetters, listFollowUps, updateFollowUpDeliveryByProviderMessageId } from "./patients/store.js";
 import { logger } from "./logger.js";
 import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
 import { getDb } from "./db/client.js";
+import { nowIso } from "./utils.js";
 
 function sendJson(res: Response, status: number, payload: unknown): void {
   res.status(status).json(payload);
@@ -161,9 +163,20 @@ async function handleCapability(
 
 export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
   const app = express();
+  app.use(express.urlencoded({ extended: false }));
   app.use(express.json({ limit: "2mb" }));
 
-  const { apiToken, apiTokenRead, apiTokenWrite, apiTokenAdmin, apiRateLimitWindowMs, apiRateLimitMax } = getConfig();
+  const {
+    apiToken,
+    apiTokenRead,
+    apiTokenWrite,
+    apiTokenAdmin,
+    twilioWebhookValidate,
+    twilioWebhookAuthToken,
+    publicBaseUrl,
+    apiRateLimitWindowMs,
+    apiRateLimitMax
+  } = getConfig();
   const rateWindow = new Map<string, { count: number; resetAt: number }>();
   const scopeByToken = new Map<string, TokenScope>();
   if (apiTokenRead) scopeByToken.set(apiTokenRead, "read");
@@ -272,6 +285,67 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
       });
     } catch (error) {
       sendJson(res, 503, appError("NOT_READY", error instanceof Error ? error.message : "not ready"));
+    }
+  });
+
+  app.post("/webhooks/twilio/status", (req, res) => {
+    try {
+      if (twilioWebhookValidate) {
+        const signature = req.header("x-twilio-signature");
+        if (!signature) {
+          sendJson(res, 403, appError("FORBIDDEN", "Missing Twilio signature"));
+          return;
+        }
+        const host = req.header("host");
+        const protocol = req.header("x-forwarded-proto") ?? req.protocol;
+        const callbackUrl = publicBaseUrl
+          ? `${publicBaseUrl.replace(/\/$/, "")}${req.originalUrl}`
+          : `${protocol}://${host}${req.originalUrl}`;
+        const valid = twilio.validateRequest(
+          twilioWebhookAuthToken,
+          signature,
+          callbackUrl,
+          (req.body ?? {}) as Record<string, string>
+        );
+        if (!valid) {
+          sendJson(res, 403, appError("FORBIDDEN", "Invalid Twilio signature"));
+          return;
+        }
+      }
+
+      const body = asObject(req.body);
+      if (!body) {
+        sendJson(res, 400, appError("VALIDATION_ERROR", "Request body must be an object"));
+        return;
+      }
+      const messageSid = requireString(body, "MessageSid");
+      const providerStatusRaw = requireString(body, "MessageStatus");
+      if (!messageSid || !providerStatusRaw) {
+        sendJson(res, 422, appError("VALIDATION_ERROR", "MessageSid and MessageStatus are required"));
+        return;
+      }
+      const normalizedStatus = providerStatusRaw.toLowerCase();
+      const allowedStatus = ["queued", "sent", "delivered", "undelivered", "failed"];
+      if (!allowedStatus.includes(normalizedStatus)) {
+        sendJson(res, 422, appError("VALIDATION_ERROR", "Unsupported MessageStatus"));
+        return;
+      }
+
+      const updated = updateFollowUpDeliveryByProviderMessageId({
+        providerMessageId: messageSid,
+        providerStatus: normalizedStatus as "queued" | "sent" | "delivered" | "undelivered" | "failed",
+        errorCode: typeof body.ErrorCode === "string" ? body.ErrorCode : undefined,
+        errorMessage: typeof body.ErrorMessage === "string" ? body.ErrorMessage : undefined,
+        at: nowIso()
+      });
+      if (!updated) {
+        sendJson(res, 404, appError("NOT_FOUND", "No follow-up found for provider message id"));
+        return;
+      }
+
+      sendJson(res, 200, { ok: true, data: updated });
+    } catch (error) {
+      sendJson(res, 500, toStructuredError(error));
     }
   });
 

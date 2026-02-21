@@ -24,6 +24,8 @@ export interface OpsMetrics {
     sent: number;
     failed: number;
     deadLetter: number;
+    delivered: number;
+    undelivered: number;
     due: number;
   };
   deadLetters: {
@@ -54,6 +56,8 @@ export function getOpsMetrics(): OpsMetrics {
       sent: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'sent'"),
       failed: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'failed'"),
       deadLetter: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'dead_letter'"),
+      delivered: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE delivery_status = 'delivered'"),
+      undelivered: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE delivery_status IN ('undelivered', 'failed')"),
       due: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'scheduled' AND scheduled_at <= ?", now)
     },
     deadLetters: {

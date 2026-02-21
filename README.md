@@ -20,6 +20,7 @@ cp .env.example .env
 Configure `.env`:
 - `ANTHROPIC_API_KEY`, `AI_MODEL`
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
+- `TWILIO_WEBHOOK_VALIDATE`, `TWILIO_WEBHOOK_AUTH_TOKEN`, `PUBLIC_BASE_URL`
 - `PORT`, `DB_PATH`, `DRY_RUN`, `API_TOKEN`
 - `API_TOKEN_READ`, `API_TOKEN_WRITE`, `API_TOKEN_ADMIN`
 - `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX`
@@ -104,6 +105,7 @@ Endpoints:
 - `POST /api/follow-up/dispatch`
 - `GET /api/ops/metrics`
 - `POST /api/decide`
+- `POST /webhooks/twilio/status`
 - `GET /api/replay`
 - `GET /api/replay/:id`
 - `POST /api/replay/prune`
@@ -130,6 +132,13 @@ Optional trace headers:
 x-request-id: your-request-id
 x-actor-id: doctor-or-service-id
 ```
+
+Twilio status callback:
+```http
+POST /webhooks/twilio/status
+Content-Type: application/x-www-form-urlencoded
+```
+Expected fields include `MessageSid`, `MessageStatus`, optional `ErrorCode`, and `ErrorMessage`.
 
 Readiness endpoint:
 - `GET /health/ready` (includes DB/queue snapshot)

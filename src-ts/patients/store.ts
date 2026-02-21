@@ -23,9 +23,14 @@ interface FollowUpRow {
   scheduled_at: string;
   sent_at: string | null;
   status: "scheduled" | "sent" | "failed" | "dead_letter";
+  delivery_status?: "queued" | "sent" | "delivered" | "undelivered" | "failed" | null;
   retry_count?: number;
   last_error?: string | null;
   provider_message_id?: string | null;
+  delivered_at?: string | null;
+  failed_at?: string | null;
+  provider_error_code?: string | null;
+  provider_error_message?: string | null;
   dead_lettered_at?: string | null;
   created_at: string;
 }
@@ -66,9 +71,14 @@ function mapFollowUp(row: FollowUpRow): FollowUpRecord {
     scheduledAt: row.scheduled_at,
     sentAt: row.sent_at ?? undefined,
     status: row.status,
+    deliveryStatus: row.delivery_status ?? undefined,
     retryCount: row.retry_count ?? 0,
     lastError: row.last_error ?? undefined,
     providerMessageId: row.provider_message_id ?? undefined,
+    deliveredAt: row.delivered_at ?? undefined,
+    failedAt: row.failed_at ?? undefined,
+    providerErrorCode: row.provider_error_code ?? undefined,
+    providerErrorMessage: row.provider_error_message ?? undefined,
     deadLetteredAt: row.dead_lettered_at ?? undefined,
     createdAt: row.created_at
   };
@@ -172,8 +182,8 @@ export function saveFollowUp(input: {
 
   db.prepare(
     `INSERT INTO follow_ups
-     (id, patient_id, doctor_id, trigger, body, channel, scheduled_at, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (id, patient_id, doctor_id, trigger, body, channel, scheduled_at, status, delivery_status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     record.id,
     record.patientId,
@@ -183,6 +193,7 @@ export function saveFollowUp(input: {
     record.channel,
     record.scheduledAt,
     record.status,
+    "queued",
     record.createdAt
   );
 
@@ -191,7 +202,15 @@ export function saveFollowUp(input: {
 
 export function markFollowUpSent(id: string, status: "sent" | "failed", sentAt: string): void {
   const db = getDb();
-  db.prepare("UPDATE follow_ups SET status = ?, sent_at = ? WHERE id = ?").run(status, sentAt, id);
+  db.prepare(
+    `UPDATE follow_ups
+     SET status = ?,
+         sent_at = ?,
+         delivery_status = ?,
+         provider_error_code = NULL,
+         provider_error_message = NULL
+     WHERE id = ?`
+  ).run(status, sentAt, status === "sent" ? "sent" : "failed", id);
 }
 
 export function markFollowUpSentWithProvider(
@@ -204,8 +223,11 @@ export function markFollowUpSentWithProvider(
     `UPDATE follow_ups
      SET status = 'sent',
          sent_at = ?,
+         delivery_status = 'sent',
          provider_message_id = ?,
-         last_error = NULL
+         last_error = NULL,
+         provider_error_code = NULL,
+         provider_error_message = NULL
      WHERE id = ?`
   ).run(sentAt, providerMessageId ?? null, id);
 }
@@ -215,6 +237,7 @@ export function markFollowUpFailedWithBackoff(id: string, retryCount: number, er
   db.prepare(
     `UPDATE follow_ups
      SET status = 'scheduled',
+         delivery_status = 'queued',
          retry_count = ?,
          last_error = ?,
          provider_message_id = NULL,
@@ -267,6 +290,7 @@ export function moveFollowUpToDeadLetter(input: {
   db.prepare(
     `UPDATE follow_ups
      SET status = 'dead_letter',
+         delivery_status = 'failed',
          last_error = ?,
          retry_count = ?,
          dead_lettered_at = ?,
@@ -276,6 +300,50 @@ export function moveFollowUpToDeadLetter(input: {
   ).run(entry.lastError ?? null, entry.retryCount, createdAt, row.id);
 
   return entry;
+}
+
+export function updateFollowUpDeliveryByProviderMessageId(input: {
+  providerMessageId: string;
+  providerStatus: "queued" | "sent" | "delivered" | "undelivered" | "failed";
+  errorCode?: string;
+  errorMessage?: string;
+  at: string;
+}): FollowUpRecord | null {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT * FROM follow_ups WHERE provider_message_id = ?")
+    .get(input.providerMessageId) as FollowUpRow | undefined;
+  if (!existing) return null;
+
+  const isFailed = input.providerStatus === "undelivered" || input.providerStatus === "failed";
+  db.prepare(
+    `UPDATE follow_ups
+     SET delivery_status = ?,
+         status = CASE
+           WHEN ? = 1 AND status != 'dead_letter' THEN 'failed'
+           ELSE status
+         END,
+         delivered_at = CASE WHEN ? = 'delivered' THEN ? ELSE delivered_at END,
+         failed_at = CASE WHEN ? = 1 THEN ? ELSE failed_at END,
+         provider_error_code = ?,
+         provider_error_message = ?,
+         last_error = CASE WHEN ? = 1 THEN ? ELSE last_error END
+     WHERE provider_message_id = ?`
+  ).run(
+    input.providerStatus,
+    isFailed ? 1 : 0,
+    input.providerStatus,
+    input.at,
+    isFailed ? 1 : 0,
+    input.at,
+    input.errorCode ?? null,
+    input.errorMessage ?? null,
+    isFailed ? 1 : 0,
+    input.errorMessage ?? input.errorCode ?? null,
+    input.providerMessageId
+  );
+
+  return getFollowUpById(existing.id);
 }
 
 export function getFollowUpById(id: string): FollowUpRecord | null {

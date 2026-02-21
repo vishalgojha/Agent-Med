@@ -18,6 +18,7 @@
   - request trace via `x-request-id` and actor tagging via `x-actor-id`
   - prior-auth lifecycle routes (`GET`, `PATCH status`)
   - follow-up listing and retry routes
+  - Twilio delivery-status webhook route (`POST /webhooks/twilio/status`)
   - manual due-dispatch route for scheduled follow-ups
   - `/health/ready` readiness endpoint with DB + queue snapshot
   - replay prune endpoint for retention management
@@ -57,6 +58,9 @@
     - follow-up rows can transition to `dead_letter`
     - dead-letter audit records stored in `follow_up_dead_letters`
     - CLI/API read paths added for dead-letter triage
+  - provider delivery reconciliation by `provider_message_id`:
+    - tracks `delivery_status`, `delivered_at`, `failed_at`
+    - records provider error code/message on undelivered failures
 
 ## Known Gaps / Improvements
 - `bin/doctor.js` assumes `dist/` exists; improve DX with a `build` check or use `tsx` launcher for dev installs.
@@ -77,7 +81,7 @@
 2. Move from static bearer tokens to signed token claims/JWT verification.
 3. Add systemd/k8s manifests and secret management docs for production rollout.
 4. Add dead-letter replay workflow (re-queue selected dead-letter items after operator review).
-5. Add structured webhook callbacks for delivery outcomes.
+5. Add webhook idempotency guardrails (event dedupe and monotonic status transitions).
 
 ## Useful Commands
 ```bash

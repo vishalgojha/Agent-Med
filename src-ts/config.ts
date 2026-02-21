@@ -10,6 +10,9 @@ export interface Config {
   apiTokenRead: string;
   apiTokenWrite: string;
   apiTokenAdmin: string;
+  twilioWebhookValidate: boolean;
+  twilioWebhookAuthToken: string;
+  publicBaseUrl: string;
   apiRateLimitWindowMs: number;
   apiRateLimitMax: number;
   replayRetentionDays: number;
@@ -35,6 +38,9 @@ export function readConfig(): Config {
     apiTokenRead: process.env.API_TOKEN_READ ?? "",
     apiTokenWrite: process.env.API_TOKEN_WRITE ?? "",
     apiTokenAdmin: process.env.API_TOKEN_ADMIN ?? "",
+    twilioWebhookValidate: String(process.env.TWILIO_WEBHOOK_VALIDATE ?? "false").toLowerCase() === "true",
+    twilioWebhookAuthToken: process.env.TWILIO_WEBHOOK_AUTH_TOKEN ?? process.env.TWILIO_AUTH_TOKEN ?? "",
+    publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
     apiRateLimitWindowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS ?? 60000),
     apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX ?? 120),
     replayRetentionDays: Number(process.env.REPLAY_RETENTION_DAYS ?? 30),

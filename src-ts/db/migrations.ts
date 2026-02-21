@@ -34,6 +34,21 @@ export function runMigrations(): void {
   if (!followUpNames.has("provider_message_id")) {
     db.exec("ALTER TABLE follow_ups ADD COLUMN provider_message_id TEXT");
   }
+  if (!followUpNames.has("delivery_status")) {
+    db.exec("ALTER TABLE follow_ups ADD COLUMN delivery_status TEXT");
+  }
+  if (!followUpNames.has("delivered_at")) {
+    db.exec("ALTER TABLE follow_ups ADD COLUMN delivered_at TEXT");
+  }
+  if (!followUpNames.has("failed_at")) {
+    db.exec("ALTER TABLE follow_ups ADD COLUMN failed_at TEXT");
+  }
+  if (!followUpNames.has("provider_error_code")) {
+    db.exec("ALTER TABLE follow_ups ADD COLUMN provider_error_code TEXT");
+  }
+  if (!followUpNames.has("provider_error_message")) {
+    db.exec("ALTER TABLE follow_ups ADD COLUMN provider_error_message TEXT");
+  }
   if (!followUpNames.has("dead_lettered_at")) {
     db.exec("ALTER TABLE follow_ups ADD COLUMN dead_lettered_at TEXT");
   }

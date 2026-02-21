@@ -6,7 +6,7 @@ import { resetConfigForTests } from "../config.js";
 import { addDoctor } from "../doctors/store.js";
 import { StubMessagingAdapter } from "../messaging/stub.js";
 import { getDb } from "../db/client.js";
-import { addPatient, markFollowUpSent, saveFollowUp } from "../patients/store.js";
+import { addPatient, getFollowUpById, markFollowUpSent, saveFollowUp } from "../patients/store.js";
 import { createServer } from "../server.js";
 import { setupTestDb, teardownTestDb } from "./test-helpers.js";
 import { createIntent } from "../engine/intent.js";
@@ -528,6 +528,47 @@ test("api follow-up dead-letter endpoint returns dead-lettered rows", async () =
     assert.equal(body.data.length, 1);
     assert.equal(body.data[0].followUpId, row.id);
     assert.equal(body.data[0].reason, "max_retry_exceeded");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("twilio status webhook updates delivery status by provider message id", async () => {
+  const dbPath = setupTestDb("server-twilio-status-webhook");
+  const svc = await startTestServer();
+  try {
+    const doctor = addDoctor({ name: "Dr Webhook", specialty: "general" });
+    const patient = addPatient({ doctorId: doctor.id, name: "Pat Webhook", phone: "+15556667777" });
+    const row = saveFollowUp({
+      patientId: patient.id,
+      doctorId: doctor.id,
+      trigger: "custom",
+      body: "Please call clinic.",
+      channel: "sms",
+      scheduledAt: new Date().toISOString()
+    });
+    getDb()
+      .prepare("UPDATE follow_ups SET status = 'sent', provider_message_id = ?, sent_at = ? WHERE id = ?")
+      .run("SM123456789", new Date().toISOString(), row.id);
+
+    const form = new URLSearchParams({
+      MessageSid: "SM123456789",
+      MessageStatus: "delivered"
+    });
+    const res = await fetch(`${svc.baseUrl}/webhooks/twilio/status`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString()
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { ok: boolean; data: { deliveryStatus?: string } };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.deliveryStatus, "delivered");
+
+    const updated = getFollowUpById(row.id);
+    assert.equal(updated?.deliveryStatus, "delivered");
+    assert.equal(typeof updated?.deliveredAt, "string");
   } finally {
     await svc.close();
     teardownTestDb(dbPath);
