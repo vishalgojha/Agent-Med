@@ -74,4 +74,18 @@ export function runMigrations(): void {
       created_at TEXT NOT NULL
     )`
   );
+
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS follow_up_provider_events (
+      id TEXT PRIMARY KEY,
+      follow_up_id TEXT NOT NULL REFERENCES follow_ups(id),
+      provider_message_id TEXT NOT NULL,
+      provider_status TEXT NOT NULL,
+      error_code_norm TEXT NOT NULL DEFAULT '',
+      error_message_norm TEXT NOT NULL DEFAULT '',
+      payload TEXT NOT NULL,
+      received_at TEXT NOT NULL,
+      UNIQUE (provider_message_id, provider_status, error_code_norm, error_message_norm)
+    )`
+  );
 }

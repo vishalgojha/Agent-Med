@@ -68,6 +68,7 @@
   - provider delivery reconciliation by `provider_message_id`:
     - tracks `delivery_status`, `delivered_at`, `failed_at`
     - records provider error code/message on undelivered failures
+    - provider event idempotency table + monotonic transition guardrails
 
 ## Known Gaps / Improvements
 - `bin/doctor.js` assumes `dist/` exists; improve DX with a `build` check or use `tsx` launcher for dev installs.
@@ -86,9 +87,9 @@
 ## Suggested Next Tasks (Priority)
 1. Move from static bearer tokens to signed token claims/JWT verification.
 2. Add systemd/k8s manifests and secret management docs for production rollout.
-3. Add webhook idempotency guardrails (event dedupe and monotonic status transitions).
-4. Add dead-letter replay audit metadata (`requeued_by`, `requeued_at`, reason).
-5. Add provider callback retries + signature validation integration test coverage.
+3. Add dead-letter replay audit metadata (`requeued_by`, `requeued_at`, reason).
+4. Add provider callback retries + signature validation integration test coverage.
+5. Add patient list/search pagination for high-volume clinics.
 
 ## Useful Commands
 ```bash

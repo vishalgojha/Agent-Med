@@ -31,6 +31,9 @@ export interface OpsMetrics {
   deadLetters: {
     total: number;
   };
+  providerEvents: {
+    total: number;
+  };
   replay: {
     total: number;
   };
@@ -62,6 +65,9 @@ export function getOpsMetrics(): OpsMetrics {
     },
     deadLetters: {
       total: scalar("SELECT COUNT(*) AS count FROM follow_up_dead_letters")
+    },
+    providerEvents: {
+      total: scalar("SELECT COUNT(*) AS count FROM follow_up_provider_events")
     },
     replay: {
       total: scalar("SELECT COUNT(*) AS count FROM replay_log")

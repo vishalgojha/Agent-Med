@@ -148,6 +148,7 @@ POST /webhooks/twilio/status
 Content-Type: application/x-www-form-urlencoded
 ```
 Expected fields include `MessageSid`, `MessageStatus`, optional `ErrorCode`, and `ErrorMessage`.
+Duplicate delivery events are deduplicated; out-of-order regressions are ignored by monotonic guards.
 
 Readiness endpoint:
 - `GET /health/ready` (includes DB/queue snapshot)

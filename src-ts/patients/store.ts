@@ -47,6 +47,8 @@ interface FollowUpDeadLetterRow {
   created_at: string;
 }
 
+type ProviderDeliveryStatus = "queued" | "sent" | "delivered" | "undelivered" | "failed";
+
 function mapPatient(row: PatientRow): Patient {
   return {
     id: row.id,
@@ -304,16 +306,82 @@ export function moveFollowUpToDeadLetter(input: {
 
 export function updateFollowUpDeliveryByProviderMessageId(input: {
   providerMessageId: string;
-  providerStatus: "queued" | "sent" | "delivered" | "undelivered" | "failed";
+  providerStatus: ProviderDeliveryStatus;
   errorCode?: string;
   errorMessage?: string;
+  payload?: string;
   at: string;
-}): FollowUpRecord | null {
+}): { record: FollowUpRecord | null; deduped: boolean; applied: boolean; ignoredReason?: string } {
   const db = getDb();
   const existing = db
     .prepare("SELECT * FROM follow_ups WHERE provider_message_id = ?")
     .get(input.providerMessageId) as FollowUpRow | undefined;
-  if (!existing) return null;
+  if (!existing) return { record: null, deduped: false, applied: false, ignoredReason: "not_found" };
+
+  const errorCodeNorm = (input.errorCode ?? "").trim();
+  const errorMessageNorm = (input.errorMessage ?? "").trim();
+  let deduped = false;
+  try {
+    db.prepare(
+      `INSERT INTO follow_up_provider_events
+       (id, follow_up_id, provider_message_id, provider_status, error_code_norm, error_message_norm, payload, received_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      makeId("fpe"),
+      existing.id,
+      input.providerMessageId,
+      input.providerStatus,
+      errorCodeNorm,
+      errorMessageNorm,
+      input.payload ?? "{}",
+      input.at
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("UNIQUE constraint failed")) {
+      deduped = true;
+    } else {
+      throw error;
+    }
+  }
+
+  if (deduped) {
+    return {
+      record: getFollowUpById(existing.id),
+      deduped: true,
+      applied: false,
+      ignoredReason: "duplicate_event"
+    };
+  }
+
+  const currentStatus = existing.delivery_status ?? "queued";
+  if (existing.status === "dead_letter") {
+    return {
+      record: getFollowUpById(existing.id),
+      deduped: false,
+      applied: false,
+      ignoredReason: "dead_letter_terminal"
+    };
+  }
+  if (currentStatus === "delivered" && input.providerStatus !== "delivered") {
+    return {
+      record: getFollowUpById(existing.id),
+      deduped: false,
+      applied: false,
+      ignoredReason: "delivered_terminal"
+    };
+  }
+  if (
+    (currentStatus === "failed" || currentStatus === "undelivered") &&
+    (input.providerStatus === "queued" || input.providerStatus === "sent")
+  ) {
+    return {
+      record: getFollowUpById(existing.id),
+      deduped: false,
+      applied: false,
+      ignoredReason: "out_of_order_regression"
+    };
+  }
 
   const isFailed = input.providerStatus === "undelivered" || input.providerStatus === "failed";
   db.prepare(
@@ -343,7 +411,7 @@ export function updateFollowUpDeliveryByProviderMessageId(input: {
     input.providerMessageId
   );
 
-  return getFollowUpById(existing.id);
+  return { record: getFollowUpById(existing.id), deduped: false, applied: true };
 }
 
 export function getFollowUpById(id: string): FollowUpRecord | null {

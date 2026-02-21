@@ -624,6 +624,99 @@ test("twilio status webhook updates delivery status by provider message id", asy
   }
 });
 
+test("twilio webhook dedupes duplicate events", async () => {
+  const dbPath = setupTestDb("server-twilio-status-dedupe");
+  const svc = await startTestServer();
+  try {
+    const doctor = addDoctor({ name: "Dr Dedupe", specialty: "general" });
+    const patient = addPatient({ doctorId: doctor.id, name: "Pat Dedupe", phone: "+15551110000" });
+    const row = saveFollowUp({
+      patientId: patient.id,
+      doctorId: doctor.id,
+      trigger: "custom",
+      body: "Please call clinic.",
+      channel: "sms",
+      scheduledAt: new Date().toISOString()
+    });
+    getDb()
+      .prepare("UPDATE follow_ups SET status = 'sent', provider_message_id = ?, sent_at = ? WHERE id = ?")
+      .run("SMDEDUPE1", new Date().toISOString(), row.id);
+
+    const form = new URLSearchParams({
+      MessageSid: "SMDEDUPE1",
+      MessageStatus: "delivered"
+    });
+    const first = await fetch(`${svc.baseUrl}/webhooks/twilio/status`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString()
+    });
+    assert.equal(first.status, 200);
+
+    const second = await fetch(`${svc.baseUrl}/webhooks/twilio/status`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString()
+    });
+    assert.equal(second.status, 200);
+    const secondBody = (await second.json()) as {
+      ok: boolean;
+      meta: { deduped: boolean; applied: boolean };
+      data: { deliveryStatus?: string };
+    };
+    assert.equal(secondBody.ok, true);
+    assert.equal(secondBody.meta.deduped, true);
+    assert.equal(secondBody.meta.applied, false);
+    assert.equal(secondBody.data.deliveryStatus, "delivered");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("twilio webhook ignores out-of-order regression after delivered", async () => {
+  const dbPath = setupTestDb("server-twilio-status-regression");
+  const svc = await startTestServer();
+  try {
+    const doctor = addDoctor({ name: "Dr Regression", specialty: "general" });
+    const patient = addPatient({ doctorId: doctor.id, name: "Pat Regression", phone: "+15551112223" });
+    const row = saveFollowUp({
+      patientId: patient.id,
+      doctorId: doctor.id,
+      trigger: "custom",
+      body: "Please call clinic.",
+      channel: "sms",
+      scheduledAt: new Date().toISOString()
+    });
+    getDb()
+      .prepare("UPDATE follow_ups SET status = 'sent', provider_message_id = ?, sent_at = ?, delivery_status = 'delivered' WHERE id = ?")
+      .run("SMREG1", new Date().toISOString(), row.id);
+
+    const form = new URLSearchParams({
+      MessageSid: "SMREG1",
+      MessageStatus: "sent"
+    });
+    const res = await fetch(`${svc.baseUrl}/webhooks/twilio/status`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString()
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      meta: { applied: boolean; ignoredReason?: string };
+      data: { deliveryStatus?: string };
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.meta.applied, false);
+    assert.equal(body.meta.ignoredReason, "delivered_terminal");
+    assert.equal(body.data.deliveryStatus, "delivered");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
 test("api doctor and patient registry endpoints create and list records", async () => {
   const dbPath = setupTestDb("server-registry");
   const svc = await startTestServer();

@@ -75,6 +75,18 @@ CREATE TABLE IF NOT EXISTS follow_up_dead_letters (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS follow_up_provider_events (
+  id TEXT PRIMARY KEY,
+  follow_up_id TEXT NOT NULL REFERENCES follow_ups(id),
+  provider_message_id TEXT NOT NULL,
+  provider_status TEXT NOT NULL,
+  error_code_norm TEXT NOT NULL DEFAULT '',
+  error_message_norm TEXT NOT NULL DEFAULT '',
+  payload TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  UNIQUE (provider_message_id, provider_status, error_code_norm, error_message_norm)
+);
+
 CREATE TABLE IF NOT EXISTS replay_log (
   id TEXT PRIMARY KEY,
   intent_id TEXT NOT NULL,
@@ -101,4 +113,5 @@ CREATE INDEX IF NOT EXISTS idx_follow_ups_retry_count ON follow_ups(status, retr
 CREATE INDEX IF NOT EXISTS idx_follow_ups_provider_message_id ON follow_ups(provider_message_id);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_delivery_status ON follow_ups(delivery_status);
 CREATE INDEX IF NOT EXISTS idx_follow_up_dead_letters_created ON follow_up_dead_letters(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_follow_up_provider_events_received ON follow_up_provider_events(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_replay_executed ON replay_log(executed_at DESC);

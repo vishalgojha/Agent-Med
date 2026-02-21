@@ -361,14 +361,23 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
         providerStatus: normalizedStatus as "queued" | "sent" | "delivered" | "undelivered" | "failed",
         errorCode: typeof body.ErrorCode === "string" ? body.ErrorCode : undefined,
         errorMessage: typeof body.ErrorMessage === "string" ? body.ErrorMessage : undefined,
+        payload: JSON.stringify(body),
         at: nowIso()
       });
-      if (!updated) {
+      if (!updated.record) {
         sendJson(res, 404, appError("NOT_FOUND", "No follow-up found for provider message id"));
         return;
       }
 
-      sendJson(res, 200, { ok: true, data: updated });
+      sendJson(res, 200, {
+        ok: true,
+        data: updated.record,
+        meta: {
+          deduped: updated.deduped,
+          applied: updated.applied,
+          ignoredReason: updated.ignoredReason
+        }
+      });
     } catch (error) {
       sendJson(res, 500, toStructuredError(error));
     }
