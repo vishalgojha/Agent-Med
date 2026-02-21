@@ -574,3 +574,58 @@ test("twilio status webhook updates delivery status by provider message id", asy
     teardownTestDb(dbPath);
   }
 });
+
+test("api doctor and patient registry endpoints create and list records", async () => {
+  const dbPath = setupTestDb("server-registry");
+  const svc = await startTestServer();
+  try {
+    const createDoctorRes = await fetch(`${svc.baseUrl}/api/doctors`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Dr Registry", specialty: "primary_care" })
+    });
+    assert.equal(createDoctorRes.status, 201);
+    const createDoctorBody = (await createDoctorRes.json()) as {
+      ok: boolean;
+      data: { id: string };
+    };
+    assert.equal(createDoctorBody.ok, true);
+
+    const doctorId = createDoctorBody.data.id;
+    const createPatientRes = await fetch(`${svc.baseUrl}/api/patients`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        doctorId,
+        name: "Pat Registry",
+        phone: "+15550007777"
+      })
+    });
+    assert.equal(createPatientRes.status, 201);
+    const createPatientBody = (await createPatientRes.json()) as {
+      ok: boolean;
+      data: { doctorId: string };
+    };
+    assert.equal(createPatientBody.ok, true);
+    assert.equal(createPatientBody.data.doctorId, doctorId);
+
+    const doctorsRes = await fetch(`${svc.baseUrl}/api/doctors`);
+    assert.equal(doctorsRes.status, 200);
+    const doctorsBody = (await doctorsRes.json()) as { ok: boolean; data: Array<{ id: string }> };
+    assert.equal(doctorsBody.ok, true);
+    assert.equal(doctorsBody.data.length, 1);
+
+    const patientsRes = await fetch(`${svc.baseUrl}/api/patients?doctorId=${encodeURIComponent(doctorId)}`);
+    assert.equal(patientsRes.status, 200);
+    const patientsBody = (await patientsRes.json()) as {
+      ok: boolean;
+      data: Array<{ doctorId: string }>;
+    };
+    assert.equal(patientsBody.ok, true);
+    assert.equal(patientsBody.data.length, 1);
+    assert.equal(patientsBody.data[0].doctorId, doctorId);
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});

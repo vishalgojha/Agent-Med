@@ -93,6 +93,12 @@ npm run serve
 ```
 
 Endpoints:
+- `GET /api/doctors`
+- `POST /api/doctors`
+- `GET /api/doctors/:id`
+- `GET /api/patients`
+- `POST /api/patients`
+- `GET /api/patients/:id`
 - `POST /api/scribe`
 - `POST /api/prior-auth`
 - `GET /api/prior-auth`

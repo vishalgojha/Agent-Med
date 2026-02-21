@@ -17,6 +17,7 @@
   - in-memory API rate limiting via `API_RATE_LIMIT_WINDOW_MS` and `API_RATE_LIMIT_MAX`
   - request trace via `x-request-id` and actor tagging via `x-actor-id`
   - prior-auth lifecycle routes (`GET`, `PATCH status`)
+  - doctor/patient registry routes (`GET/POST /api/doctors`, `GET/POST /api/patients`)
   - follow-up listing and retry routes
   - Twilio delivery-status webhook route (`POST /webhooks/twilio/status`)
   - manual due-dispatch route for scheduled follow-ups
@@ -37,7 +38,7 @@
 - Ops metrics snapshot utility:
   - `src-ts/ops/metrics.ts`
 - React UI console (`ui/`):
-  - Vite + React dashboard for Ops, Scribe, Prior Auth, Follow-up, Decision Support, Dead Letters, Replay
+  - Vite + React dashboard for Registry, Ops, Scribe, Prior Auth, Follow-up, Decision Support, Dead Letters, Replay
   - token-aware API client for scoped bearer tokens
   - scripts: `ui:install`, `ui:dev`, `ui:build`, `build:all`
 - AI layer:

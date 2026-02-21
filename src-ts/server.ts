@@ -12,12 +12,21 @@ import { createCapabilityHandlers, createRuntimeDeps, RuntimeDeps } from "./runt
 import { listReplay, getReplayById, pruneReplayOlderThan } from "./engine/replay.js";
 import { CapabilityName, RiskLevel } from "./types.js";
 import { getPriorAuthById, listPriorAuths } from "./capabilities/prior-auth.js";
-import { listFollowUpDeadLetters, listFollowUps, updateFollowUpDeliveryByProviderMessageId } from "./patients/store.js";
+import {
+  addPatient,
+  getPatientById,
+  listFollowUpDeadLetters,
+  listFollowUps,
+  listPatients,
+  updateFollowUpDeliveryByProviderMessageId
+} from "./patients/store.js";
 import { logger } from "./logger.js";
 import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
 import { getDb } from "./db/client.js";
 import { nowIso } from "./utils.js";
+import { addDoctor, getDoctorById, listDoctors } from "./doctors/store.js";
+import { Specialty } from "./types.js";
 
 function sendJson(res: Response, status: number, payload: unknown): void {
   res.status(status).json(payload);
@@ -66,6 +75,20 @@ function requireStringArray(body: Record<string, unknown>, field: string): strin
   if (!Array.isArray(value)) return null;
   const cleaned = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
   return cleaned.length === value.length ? cleaned : null;
+}
+
+function parseSpecialty(value: unknown): Specialty | null {
+  if (typeof value !== "string") return null;
+  const allowed: Specialty[] = [
+    "primary_care",
+    "emergency",
+    "oncology",
+    "psychiatry",
+    "hospitalist",
+    "surgery",
+    "general"
+  ];
+  return allowed.includes(value as Specialty) ? (value as Specialty) : null;
 }
 
 function validateCapabilityPayload(
@@ -366,6 +389,87 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
   app.post("/api/decide", async (req, res) => {
     if (!requireScope(req, res, "read")) return;
     await handleCapability(req, res, "decision_support", deps);
+  });
+  app.get("/api/doctors", (req, res) => {
+    if (!requireScope(req, res, "read")) return;
+    sendJson(res, 200, { ok: true, data: listDoctors() });
+  });
+  app.post("/api/doctors", (req, res) => {
+    if (!requireScope(req, res, "write")) return;
+    const body = asObject(req.body);
+    if (!body) {
+      sendJson(res, 400, appError("VALIDATION_ERROR", "Request body must be a JSON object"));
+      return;
+    }
+    const name = requireString(body, "name");
+    const specialty = parseSpecialty(body.specialty);
+    if (!name) {
+      sendJson(res, 422, appError("VALIDATION_ERROR", "name is required"));
+      return;
+    }
+    if (!specialty) {
+      sendJson(
+        res,
+        422,
+        appError("VALIDATION_ERROR", "specialty must be one of primary_care|emergency|oncology|psychiatry|hospitalist|surgery|general")
+      );
+      return;
+    }
+    sendJson(res, 201, { ok: true, data: addDoctor({ name, specialty }) });
+  });
+  app.get("/api/doctors/:id", (req, res) => {
+    if (!requireScope(req, res, "read")) return;
+    const doctor = getDoctorById(req.params.id);
+    if (!doctor) {
+      sendJson(res, 404, appError("NOT_FOUND", "Doctor not found"));
+      return;
+    }
+    sendJson(res, 200, { ok: true, data: doctor });
+  });
+  app.get("/api/patients", (req, res) => {
+    if (!requireScope(req, res, "read")) return;
+    const doctorId = typeof req.query.doctorId === "string" ? req.query.doctorId : undefined;
+    const rows = listPatients();
+    sendJson(res, 200, { ok: true, data: doctorId ? rows.filter((row) => row.doctorId === doctorId) : rows });
+  });
+  app.post("/api/patients", (req, res) => {
+    if (!requireScope(req, res, "write")) return;
+    const body = asObject(req.body);
+    if (!body) {
+      sendJson(res, 400, appError("VALIDATION_ERROR", "Request body must be a JSON object"));
+      return;
+    }
+    const doctorId = requireString(body, "doctorId");
+    const name = requireString(body, "name");
+    if (!doctorId) {
+      sendJson(res, 422, appError("VALIDATION_ERROR", "doctorId is required"));
+      return;
+    }
+    if (!name) {
+      sendJson(res, 422, appError("VALIDATION_ERROR", "name is required"));
+      return;
+    }
+    if (!getDoctorById(doctorId)) {
+      sendJson(res, 404, appError("NOT_FOUND", "Doctor not found"));
+      return;
+    }
+    const dob = typeof body.dob === "string" ? body.dob : undefined;
+    const phone = typeof body.phone === "string" ? body.phone : undefined;
+    const meds = Array.isArray(body.meds) ? body.meds.filter((v): v is string => typeof v === "string") : undefined;
+    const allergies = Array.isArray(body.allergies)
+      ? body.allergies.filter((v): v is string => typeof v === "string")
+      : undefined;
+    const patient = addPatient({ doctorId, name, dob, phone, meds, allergies });
+    sendJson(res, 201, { ok: true, data: patient });
+  });
+  app.get("/api/patients/:id", (req, res) => {
+    if (!requireScope(req, res, "read")) return;
+    const patient = getPatientById(req.params.id);
+    if (!patient) {
+      sendJson(res, 404, appError("NOT_FOUND", "Patient not found"));
+      return;
+    }
+    sendJson(res, 200, { ok: true, data: patient });
   });
   app.patch("/api/prior-auth/:id/status", async (req, res) => {
     if (!requireScope(req, res, "write")) return;

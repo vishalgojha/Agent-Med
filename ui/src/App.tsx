@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from "react";
 
-type Tab = "overview" | "scribe" | "priorAuth" | "followUp" | "decide" | "deadLetters" | "replay";
+type Tab = "registry" | "overview" | "scribe" | "priorAuth" | "followUp" | "decide" | "deadLetters" | "replay";
 
 async function apiRequest<T>(
   path: string,
@@ -33,6 +33,7 @@ export function App() {
   const tabs: Array<{ id: Tab; label: string }> = useMemo(
     () => [
       { id: "overview", label: "Ops" },
+      { id: "registry", label: "Registry" },
       { id: "scribe", label: "Ambient Scribe" },
       { id: "priorAuth", label: "Prior Auth" },
       { id: "followUp", label: "Follow-up" },
@@ -76,6 +77,39 @@ export function App() {
         }
       })
     );
+  };
+
+  const runCreateDoctor = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    await run(async () => {
+      const data = await apiRequest<{ id: string; name: string; specialty: string }>("/api/doctors", token, {
+        method: "POST",
+        bodyJson: {
+          name: String(fd.get("name") ?? ""),
+          specialty: String(fd.get("specialty") ?? "general")
+        }
+      });
+      setDoctorId(data.id);
+      return data;
+    });
+  };
+
+  const runCreatePatient = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    await run(async () => {
+      const data = await apiRequest<{ id: string; doctorId: string; name: string }>("/api/patients", token, {
+        method: "POST",
+        bodyJson: {
+          doctorId,
+          name: String(fd.get("name") ?? ""),
+          phone: String(fd.get("phone") ?? "")
+        }
+      });
+      setPatientId(data.id);
+      return data;
+    });
   };
 
   const runPriorAuth = async (event: FormEvent<HTMLFormElement>) => {
@@ -165,6 +199,39 @@ export function App() {
             <button onClick={runOverview} disabled={loading}>
               Refresh readiness + metrics
             </button>
+          </div>
+        )}
+
+        {active === "registry" && (
+          <div className="stack">
+            <form className="stack" onSubmit={runCreateDoctor}>
+              <h3>Create doctor</h3>
+              <input name="name" placeholder="Doctor name" required />
+              <select name="specialty" defaultValue="general">
+                <option value="primary_care">primary_care</option>
+                <option value="emergency">emergency</option>
+                <option value="oncology">oncology</option>
+                <option value="psychiatry">psychiatry</option>
+                <option value="hospitalist">hospitalist</option>
+                <option value="surgery">surgery</option>
+                <option value="general">general</option>
+              </select>
+              <button disabled={loading}>Create doctor</button>
+            </form>
+            <form className="stack" onSubmit={runCreatePatient}>
+              <h3>Create patient</h3>
+              <input name="name" placeholder="Patient name" required />
+              <input name="phone" placeholder="Phone E.164 (optional)" />
+              <button disabled={loading}>Create patient</button>
+            </form>
+            <div className="stack">
+              <button onClick={() => run(() => apiRequest("/api/doctors", token))} disabled={loading}>
+                List doctors
+              </button>
+              <button onClick={() => run(() => apiRequest(`/api/patients?doctorId=${encodeURIComponent(doctorId)}`, token))} disabled={loading}>
+                List patients for doctor
+              </button>
+            </div>
           </div>
         )}
 
