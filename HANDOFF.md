@@ -25,6 +25,7 @@
   - scheduled replay retention prune in `startServer`
   - scope-based authorization derived from authenticated bearer token (`read|write|admin`)
   - DB-backed API rate limiting via `rate_limits` table (shared state across processes)
+  - serves React UI from `ui/dist` when present
 - SQLite storage via `better-sqlite3`:
   - schema: `src-ts/db/schema.sql`
   - client/migrations: `src-ts/db/client.ts`, `src-ts/db/migrations.ts`
@@ -35,6 +36,10 @@
   - replay rows now include `request_id` and `actor_id`
 - Ops metrics snapshot utility:
   - `src-ts/ops/metrics.ts`
+- React UI console (`ui/`):
+  - Vite + React dashboard for Ops, Scribe, Prior Auth, Follow-up, Decision Support, Dead Letters, Replay
+  - token-aware API client for scoped bearer tokens
+  - scripts: `ui:install`, `ui:dev`, `ui:build`, `build:all`
 - AI layer:
   - provider interface + Anthropic/stub clients: `src-ts/ai/client.ts`
   - prompt loader: `src-ts/ai/prompts.ts`
@@ -77,7 +82,7 @@
 - Do not add `exec`, `spawn`, or `eval` in app code.
 
 ## Suggested Next Tasks (Priority)
-1. Add dashboard or TUI for triage queue and pending follow-ups.
+1. Add patient/doctor CRUD API endpoints so the React UI can manage records end-to-end.
 2. Move from static bearer tokens to signed token claims/JWT verification.
 3. Add systemd/k8s manifests and secret management docs for production rollout.
 4. Add dead-letter replay workflow (re-queue selected dead-letter items after operator review).

@@ -1,5 +1,7 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import twilio from "twilio";
 import { runMigrations } from "./db/migrations.js";
 import { createIntent } from "./engine/intent.js";
@@ -544,6 +546,18 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
       }
     });
   });
+
+  const uiDistPath = path.resolve(process.cwd(), "ui", "dist");
+  if (fs.existsSync(path.join(uiDistPath, "index.html"))) {
+    app.use(express.static(uiDistPath));
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api") || req.path.startsWith("/webhooks") || req.path.startsWith("/health")) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(uiDistPath, "index.html"));
+    });
+  }
 
   return app;
 }

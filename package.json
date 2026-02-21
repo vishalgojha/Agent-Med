@@ -11,11 +11,16 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:all": "npm run build && npm run ui:build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src-ts/tests/*.spec.ts",
     "start": "tsx src-ts/index.ts",
     "serve": "tsx src-ts/index.ts serve",
     "init": "tsx src-ts/index.ts init",
+    "ui:install": "npm --prefix ui install",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build",
+    "ui:preview": "npm --prefix ui run preview",
     "prepare": "npm run build"
   },
   "dependencies": {

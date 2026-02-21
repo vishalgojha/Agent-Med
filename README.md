@@ -14,6 +14,7 @@
 ```bash
 npm install
 cp .env.example .env
+npm run ui:install
 ```
 
 ## Environment
@@ -142,6 +143,20 @@ Expected fields include `MessageSid`, `MessageStatus`, optional `ErrorCode`, and
 
 Readiness endpoint:
 - `GET /health/ready` (includes DB/queue snapshot)
+
+## React UI
+Run backend + UI in parallel:
+```bash
+npm run serve
+npm run ui:dev
+```
+
+Build both:
+```bash
+npm run build:all
+```
+
+When `ui/dist` exists, `npm run serve` also serves the React app from `/`.
 
 ## Deployment
 Docker:

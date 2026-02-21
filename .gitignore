@@ -3,3 +3,5 @@ dist/
 .env
 *.log
 data/*.db
+ui/node_modules/
+ui/dist/
