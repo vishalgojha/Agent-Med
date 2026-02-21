@@ -536,6 +536,30 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 50;
     sendJson(res, 200, { ok: true, data: listFollowUpDeadLetters(safeLimit) });
   });
+  app.post("/api/follow-up/dead-letter/:id/requeue", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
+    const body = asObject(req.body) ?? {};
+    const intent = createIntent({
+      capability: "follow_up",
+      doctorId: String(body.doctorId ?? "d_api"),
+      payload: {
+        mode: "requeue_dead_letter",
+        deadLetterId: req.params.id
+      },
+      risk: "MEDIUM",
+      dryRun: Boolean(body.dryRun)
+    });
+    const result = await executeIntent(intent, createCapabilityHandlers(deps), {
+      confirm: Boolean(body.confirm),
+      requestId: String(req.headers["x-request-id"] ?? ""),
+      actorId: String(req.headers["x-actor-id"] ?? "system")
+    });
+    if (result.ok === false) {
+      sendJson(res, result.blocked ? 409 : 400, result);
+      return;
+    }
+    sendJson(res, 200, { ok: true, data: result.output });
+  });
   app.post("/api/follow-up/:id/retry", async (req, res) => {
     if (!requireScope(req, res, "write")) return;
     const body = asObject(req.body) ?? {};

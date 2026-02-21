@@ -64,6 +64,7 @@
     - follow-up rows can transition to `dead_letter`
     - dead-letter audit records stored in `follow_up_dead_letters`
     - CLI/API read paths added for dead-letter triage
+    - requeue path added from dead-letter back to `scheduled`
   - provider delivery reconciliation by `provider_message_id`:
     - tracks `delivery_status`, `delivered_at`, `failed_at`
     - records provider error code/message on undelivered failures
@@ -83,11 +84,11 @@
 - Do not add `exec`, `spawn`, or `eval` in app code.
 
 ## Suggested Next Tasks (Priority)
-1. Add patient/doctor CRUD API endpoints so the React UI can manage records end-to-end.
-2. Move from static bearer tokens to signed token claims/JWT verification.
-3. Add systemd/k8s manifests and secret management docs for production rollout.
-4. Add dead-letter replay workflow (re-queue selected dead-letter items after operator review).
-5. Add webhook idempotency guardrails (event dedupe and monotonic status transitions).
+1. Move from static bearer tokens to signed token claims/JWT verification.
+2. Add systemd/k8s manifests and secret management docs for production rollout.
+3. Add webhook idempotency guardrails (event dedupe and monotonic status transitions).
+4. Add dead-letter replay audit metadata (`requeued_by`, `requeued_at`, reason).
+5. Add provider callback retries + signature validation integration test coverage.
 
 ## Useful Commands
 ```bash

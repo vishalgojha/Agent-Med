@@ -534,6 +534,55 @@ test("api follow-up dead-letter endpoint returns dead-lettered rows", async () =
   }
 });
 
+test("api dead-letter requeue moves follow-up back to scheduled", async () => {
+  const dbPath = setupTestDb("server-follow-up-dead-letter-requeue");
+  const svc = await startTestServer();
+  try {
+    const doctor = addDoctor({ name: "Dr Requeue", specialty: "general" });
+    const patient = addPatient({ doctorId: doctor.id, name: "Pat Requeue", phone: "+15557779999" });
+    const row = saveFollowUp({
+      patientId: patient.id,
+      doctorId: doctor.id,
+      trigger: "custom",
+      body: "Please call clinic.",
+      channel: "sms",
+      scheduledAt: new Date().toISOString()
+    });
+    getDb().prepare("UPDATE follow_ups SET status = 'dead_letter', dead_lettered_at = ? WHERE id = ?").run(new Date().toISOString(), row.id);
+    getDb().prepare(
+      `INSERT INTO follow_up_dead_letters
+       (id, follow_up_id, patient_id, doctor_id, reason, last_error, retry_count, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "fdl_requeue_1",
+      row.id,
+      patient.id,
+      doctor.id,
+      "max_retry_exceeded",
+      "provider timeout",
+      6,
+      JSON.stringify({ id: row.id, body: row.body, channel: row.channel }),
+      new Date().toISOString()
+    );
+
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/dead-letter/fdl_requeue_1/requeue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ doctorId: doctor.id, dryRun: false })
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { ok: boolean; data: { status: string } };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.status, "scheduled");
+
+    const updated = getFollowUpById(row.id);
+    assert.equal(updated?.status, "scheduled");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
 test("twilio status webhook updates delivery status by provider message id", async () => {
   const dbPath = setupTestDb("server-twilio-status-webhook");
   const svc = await startTestServer();

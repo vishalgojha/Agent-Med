@@ -455,6 +455,29 @@ export async function runCli(argv = process.argv): Promise<void> {
     });
 
   program
+    .command("follow-up-dead-letter-requeue")
+    .description("requeue a dead-letter follow-up job")
+    .requiredOption("--id <deadLetterId>")
+    .option("--doctor-id <doctorId>", "audit doctor id", "d_cli")
+    .option("--dry-run")
+    .action(async (opts) => {
+      runMigrations();
+      const deps = createRuntimeDeps();
+      const intent = createIntent({
+        capability: "follow_up",
+        doctorId: opts.doctorId,
+        risk: "MEDIUM",
+        dryRun: Boolean(opts.dryRun),
+        payload: {
+          mode: "requeue_dead_letter",
+          deadLetterId: opts.id
+        }
+      });
+      const result = await executeIntent(intent, createCapabilityHandlers(deps), cliExecuteOptions());
+      print(result.ok === false ? result : { ok: true, data: result.output });
+    });
+
+  program
     .command("ops-metrics")
     .description("show operational metrics snapshot")
     .action(() => {

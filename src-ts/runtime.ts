@@ -2,6 +2,7 @@ import { AIClient, createAIClient } from "./ai/client.js";
 import { runDecisionSupport } from "./capabilities/decision-support.js";
 import {
   dispatchDueFollowUps,
+  requeueDeadLetterFollowUp,
   retryFailedFollowUp,
   retryFailedFollowUpsBulk,
   runFollowUp,
@@ -62,6 +63,11 @@ export function createCapabilityHandlers(deps: RuntimeDeps): Record<CapabilityNa
             messaging: deps.messaging,
             dryRun: intent.dryRun
           })
+        : intent.payload.mode === "requeue_dead_letter"
+          ? requeueDeadLetterFollowUp({
+              deadLetterId: String(intent.payload.deadLetterId ?? ""),
+              dryRun: intent.dryRun
+            })
         : intent.payload.mode === "retry_failed_bulk"
           ? retryFailedFollowUpsBulk({
               messaging: deps.messaging,

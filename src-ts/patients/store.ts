@@ -417,3 +417,49 @@ export function listFollowUpDeadLetters(limit = 50): FollowUpDeadLetterRecord[] 
     .all(limit) as FollowUpDeadLetterRow[];
   return rows.map(mapFollowUpDeadLetter);
 }
+
+export function getFollowUpDeadLetterById(id: string): FollowUpDeadLetterRecord | null {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM follow_up_dead_letters WHERE id = ?").get(id) as FollowUpDeadLetterRow | undefined;
+  return row ? mapFollowUpDeadLetter(row) : null;
+}
+
+export function requeueFollowUpFromDeadLetter(deadLetterId: string, scheduledAt = nowIso()): FollowUpRecord {
+  const db = getDb();
+  const dead = db
+    .prepare("SELECT * FROM follow_up_dead_letters WHERE id = ?")
+    .get(deadLetterId) as FollowUpDeadLetterRow | undefined;
+  if (!dead) {
+    throw new Error("Dead-letter record not found");
+  }
+
+  const row = db
+    .prepare("SELECT * FROM follow_ups WHERE id = ?")
+    .get(dead.follow_up_id) as FollowUpRow | undefined;
+  if (!row) {
+    throw new Error("Follow-up not found");
+  }
+  if (row.status !== "dead_letter") {
+    throw new Error("Only dead-letter follow-ups can be requeued");
+  }
+
+  db.prepare(
+    `UPDATE follow_ups
+     SET status = 'scheduled',
+         delivery_status = 'queued',
+         scheduled_at = ?,
+         dead_lettered_at = NULL,
+         provider_message_id = NULL,
+         delivered_at = NULL,
+         failed_at = NULL,
+         provider_error_code = NULL,
+         provider_error_message = NULL
+     WHERE id = ?`
+  ).run(scheduledAt, row.id);
+
+  const updated = getFollowUpById(row.id);
+  if (!updated) {
+    throw new Error("Follow-up not found after requeue");
+  }
+  return updated;
+}

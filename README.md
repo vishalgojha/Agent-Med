@@ -78,6 +78,7 @@ npm run start -- replay prune --days 30 --confirm
 npm run start -- follow-up-list --status scheduled
 npm run start -- follow-up-list --status dead_letter
 npm run start -- follow-up-dead-letter-list --limit 50
+npm run start -- follow-up-dead-letter-requeue --id fdl_123
 npm run start -- follow-up-retry --id fu_123 --confirm --dry-run
 npm run start -- follow-up-retry-bulk --confirm --dry-run --limit 25
 npm run start -- follow-up-dispatch --confirm --dry-run
@@ -107,6 +108,7 @@ Endpoints:
 - `POST /api/follow-up`
 - `GET /api/follow-up`
 - `GET /api/follow-up/dead-letter`
+- `POST /api/follow-up/dead-letter/:id/requeue`
 - `POST /api/follow-up/:id/retry`
 - `POST /api/follow-up/retry-failed-bulk`
 - `POST /api/follow-up/dispatch`

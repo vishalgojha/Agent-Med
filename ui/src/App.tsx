@@ -29,6 +29,7 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [doctorId, setDoctorId] = useState("d_demo");
   const [patientId, setPatientId] = useState("p_demo");
+  const [deadLetterId, setDeadLetterId] = useState("");
 
   const tabs: Array<{ id: Tab; label: string }> = useMemo(
     () => [
@@ -278,6 +279,24 @@ export function App() {
             </button>
             <button onClick={() => run(() => apiRequest("/api/follow-up?status=dead_letter", token))} disabled={loading}>
               Load dead-letter follow-ups
+            </button>
+            <input
+              value={deadLetterId}
+              onChange={(e) => setDeadLetterId(e.target.value)}
+              placeholder="Dead-letter ID to requeue"
+            />
+            <button
+              onClick={() =>
+                run(() =>
+                  apiRequest(`/api/follow-up/dead-letter/${encodeURIComponent(deadLetterId)}/requeue`, token, {
+                    method: "POST",
+                    bodyJson: { doctorId, dryRun: false }
+                  })
+                )
+              }
+              disabled={loading || !deadLetterId}
+            >
+              Requeue dead letter
             </button>
           </div>
         )}

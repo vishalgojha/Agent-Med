@@ -5,6 +5,7 @@ import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
 import { MessagingAdapter } from "../messaging/interface.js";
 import {
+  getFollowUpDeadLetterById,
   getFollowUpById,
   listDueFollowUps,
   listFailedFollowUps,
@@ -12,6 +13,7 @@ import {
   markFollowUpFailedWithBackoff,
   markFollowUpSent,
   moveFollowUpToDeadLetter,
+  requeueFollowUpFromDeadLetter,
   saveFollowUp,
   getPatientById
 } from "../patients/store.js";
@@ -318,4 +320,42 @@ export async function retryFailedFollowUpsBulk(input: {
   }
 
   return { attempted: failedRows.length, sent, failed, skipped, dryRun };
+}
+
+export async function requeueDeadLetterFollowUp(input: {
+  deadLetterId: string;
+  dryRun?: boolean;
+}): Promise<FollowUpMessage> {
+  const cfg = getConfig();
+  const deadLetter = getFollowUpDeadLetterById(input.deadLetterId);
+  if (!deadLetter) {
+    throw new Error("Dead-letter record not found");
+  }
+  const patient = getPatientById(deadLetter.patientId);
+  if (!patient?.phone) {
+    throw new Error("Patient phone number is required for requeue");
+  }
+
+  const now = nowIso();
+  const dryRun = Boolean(input.dryRun || cfg.dryRun);
+  if (dryRun) {
+    logger.info("Dry-run dead-letter requeue", {
+      deadLetterId: input.deadLetterId,
+      followUpId: deadLetter.followUpId,
+      patientId: deadLetter.patientId
+    });
+  } else {
+    requeueFollowUpFromDeadLetter(input.deadLetterId, now);
+  }
+
+  const row = getFollowUpById(deadLetter.followUpId);
+  const payload = row ? row : JSON.parse(deadLetter.payload) as { body: string; channel: "sms" | "whatsapp" };
+
+  return {
+    to: patient.phone,
+    body: payload.body,
+    channel: payload.channel,
+    scheduledAt: now,
+    status: "scheduled"
+  };
 }
