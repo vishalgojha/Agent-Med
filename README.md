@@ -74,6 +74,8 @@ npm run start -- replay prune --days 30 --confirm
 
 # Follow-up operations
 npm run start -- follow-up-list --status scheduled
+npm run start -- follow-up-list --status dead_letter
+npm run start -- follow-up-dead-letter-list --limit 50
 npm run start -- follow-up-retry --id fu_123 --confirm --dry-run
 npm run start -- follow-up-retry-bulk --confirm --dry-run --limit 25
 npm run start -- follow-up-dispatch --confirm --dry-run
@@ -96,6 +98,7 @@ Endpoints:
 - `PATCH /api/prior-auth/:id/status`
 - `POST /api/follow-up`
 - `GET /api/follow-up`
+- `GET /api/follow-up/dead-letter`
 - `POST /api/follow-up/:id/retry`
 - `POST /api/follow-up/retry-failed-bulk`
 - `POST /api/follow-up/dispatch`
@@ -157,3 +160,4 @@ Tests use stub AI clients; no real model calls are made.
 - Decision support responses always include a disclaimer object.
 - HIGH-risk actions require `--confirm` / `confirm: true`.
 - Follow-up idempotency is enforced by `(patient_id, trigger, scheduled_at)`.
+- Retries that exceed the max threshold are moved to dead-letter for manual triage.

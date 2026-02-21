@@ -5,6 +5,7 @@ import { StubAIClient } from "../ai/client.js";
 import { resetConfigForTests } from "../config.js";
 import { addDoctor } from "../doctors/store.js";
 import { StubMessagingAdapter } from "../messaging/stub.js";
+import { getDb } from "../db/client.js";
 import { addPatient, markFollowUpSent, saveFollowUp } from "../patients/store.js";
 import { createServer } from "../server.js";
 import { setupTestDb, teardownTestDb } from "./test-helpers.js";
@@ -479,6 +480,54 @@ test("api scope blocks write endpoint for read token", async () => {
     const body = (await res.json()) as { ok: boolean; code?: string };
     assert.equal(body.ok, false);
     assert.equal(body.code, "FORBIDDEN");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api follow-up dead-letter endpoint returns dead-lettered rows", async () => {
+  const dbPath = setupTestDb("server-follow-up-dead-letter");
+  const svc = await startTestServer();
+  try {
+    const doctor = addDoctor({ name: "Dr Dead Letter", specialty: "general" });
+    const patient = addPatient({ doctorId: doctor.id, name: "Pat DL", phone: "+15557778888" });
+    const row = saveFollowUp({
+      patientId: patient.id,
+      doctorId: doctor.id,
+      trigger: "custom",
+      body: "Please call clinic.",
+      channel: "sms",
+      scheduledAt: new Date().toISOString()
+    });
+    markFollowUpSent(row.id, "failed", new Date().toISOString());
+    getDb().prepare("UPDATE follow_ups SET status = 'dead_letter', dead_lettered_at = ? WHERE id = ?").run(new Date().toISOString(), row.id);
+    getDb().prepare(
+      `INSERT INTO follow_up_dead_letters
+       (id, follow_up_id, patient_id, doctor_id, reason, last_error, retry_count, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "fdl_test_1",
+      row.id,
+      patient.id,
+      doctor.id,
+      "max_retry_exceeded",
+      "provider timeout",
+      6,
+      JSON.stringify({ id: row.id }),
+      new Date().toISOString()
+    );
+
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/dead-letter?limit=10`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: Array<{ followUpId: string; reason: string }>;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.length, 1);
+    assert.equal(body.data[0].followUpId, row.id);
+    assert.equal(body.data[0].reason, "max_retry_exceeded");
   } finally {
     await svc.close();
     teardownTestDb(dbPath);

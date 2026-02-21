@@ -23,7 +23,11 @@ export interface OpsMetrics {
     scheduled: number;
     sent: number;
     failed: number;
+    deadLetter: number;
     due: number;
+  };
+  deadLetters: {
+    total: number;
   };
   replay: {
     total: number;
@@ -49,7 +53,11 @@ export function getOpsMetrics(): OpsMetrics {
       scheduled: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'scheduled'"),
       sent: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'sent'"),
       failed: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'failed'"),
+      deadLetter: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'dead_letter'"),
       due: scalar("SELECT COUNT(*) AS count FROM follow_ups WHERE status = 'scheduled' AND scheduled_at <= ?", now)
+    },
+    deadLetters: {
+      total: scalar("SELECT COUNT(*) AS count FROM follow_up_dead_letters")
     },
     replay: {
       total: scalar("SELECT COUNT(*) AS count FROM replay_log")

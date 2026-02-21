@@ -26,8 +26,22 @@ export interface FollowUpRecord {
   channel: "sms" | "whatsapp";
   scheduledAt: string;
   sentAt?: string;
-  status: "scheduled" | "sent" | "failed";
+  status: "scheduled" | "sent" | "failed" | "dead_letter";
   retryCount?: number;
   lastError?: string;
+  providerMessageId?: string;
+  deadLetteredAt?: string;
+  createdAt: string;
+}
+
+export interface FollowUpDeadLetterRecord {
+  id: string;
+  followUpId: string;
+  patientId: string;
+  doctorId: string;
+  reason: string;
+  lastError?: string;
+  retryCount: number;
+  payload: string;
   createdAt: string;
 }

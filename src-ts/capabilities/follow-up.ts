@@ -8,8 +8,10 @@ import {
   getFollowUpById,
   listDueFollowUps,
   listFailedFollowUps,
+  markFollowUpSentWithProvider,
   markFollowUpFailedWithBackoff,
   markFollowUpSent,
+  moveFollowUpToDeadLetter,
   saveFollowUp,
   getPatientById
 } from "../patients/store.js";
@@ -146,9 +148,9 @@ export async function runFollowUp(input: {
     setTimeout(() => {
       void outboundQueue.add(async () => {
         try {
-          await input.messaging.send({ to: message.to, body: message.body, channel: message.channel });
+          const sendResult = await input.messaging.send({ to: message.to, body: message.body, channel: message.channel });
           const sentAt = nowIso();
-          markFollowUpSent(record.id, "sent", sentAt);
+          markFollowUpSentWithProvider(record.id, sentAt, sendResult.id);
         } catch {
           markFollowUpSent(record.id, "failed", nowIso());
         }
@@ -193,15 +195,21 @@ export async function retryFailedFollowUp(input: {
   }
 
   try {
-    await input.messaging.send({ to: message.to, body: message.body, channel: message.channel });
+    const sendResult = await input.messaging.send({ to: message.to, body: message.body, channel: message.channel });
     message.sentAt = nowIso();
     message.status = "sent";
-    markFollowUpSent(record.id, "sent", message.sentAt);
+    markFollowUpSentWithProvider(record.id, message.sentAt, sendResult.id);
   } catch (error) {
     message.status = "failed";
     const retryCount = (record.retryCount ?? 0) + 1;
     if (retryCount > MAX_RETRY_COUNT) {
-      markFollowUpSent(record.id, "failed", nowIso());
+      moveFollowUpToDeadLetter({
+        followUpId: record.id,
+        reason: "max_retry_exceeded",
+        lastError: error instanceof Error ? error.message : String(error),
+        retryCount
+      });
+      message.status = "dead_letter";
     } else {
       const waitMinutes = BACKOFF_MINUTES[Math.min(retryCount - 1, BACKOFF_MINUTES.length - 1)];
       const nextAt = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();
@@ -232,7 +240,12 @@ export async function dispatchDueFollowUps(input: {
     const patient = getPatientById(row.patientId);
     if (!patient?.phone) {
       failed += 1;
-      markFollowUpSent(row.id, "failed", nowIso());
+      moveFollowUpToDeadLetter({
+        followUpId: row.id,
+        reason: "missing_phone",
+        lastError: "Patient phone number is required",
+        retryCount: row.retryCount ?? 0
+      });
       continue;
     }
 
@@ -246,14 +259,19 @@ export async function dispatchDueFollowUps(input: {
     }
 
     try {
-      await input.messaging.send({ to: patient.phone, body: row.body, channel: row.channel });
+      const sendResult = await input.messaging.send({ to: patient.phone, body: row.body, channel: row.channel });
       sent += 1;
-      markFollowUpSent(row.id, "sent", nowIso());
+      markFollowUpSentWithProvider(row.id, nowIso(), sendResult.id);
     } catch (error) {
       failed += 1;
       const retryCount = (row.retryCount ?? 0) + 1;
       if (retryCount > MAX_RETRY_COUNT) {
-        markFollowUpSent(row.id, "failed", nowIso());
+        moveFollowUpToDeadLetter({
+          followUpId: row.id,
+          reason: "max_retry_exceeded",
+          lastError: error instanceof Error ? error.message : String(error),
+          retryCount
+        });
       } else {
         const waitMinutes = BACKOFF_MINUTES[Math.min(retryCount - 1, BACKOFF_MINUTES.length - 1)];
         const nextAt = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();

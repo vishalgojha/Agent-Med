@@ -9,7 +9,7 @@ import { createCapabilityHandlers, createRuntimeDeps, RuntimeDeps } from "./runt
 import { listReplay, getReplayById, pruneReplayOlderThan } from "./engine/replay.js";
 import { CapabilityName, RiskLevel } from "./types.js";
 import { getPriorAuthById, listPriorAuths } from "./capabilities/prior-auth.js";
-import { listFollowUps } from "./patients/store.js";
+import { listFollowUpDeadLetters, listFollowUps } from "./patients/store.js";
 import { logger } from "./logger.js";
 import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
@@ -346,8 +346,15 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     if (!requireScope(req, res, "read")) return;
     const patientId = typeof req.query.patientId === "string" ? req.query.patientId : undefined;
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
-    const validStatus = status === "scheduled" || status === "sent" || status === "failed" ? status : undefined;
+    const validStatus =
+      status === "scheduled" || status === "sent" || status === "failed" || status === "dead_letter" ? status : undefined;
     sendJson(res, 200, { ok: true, data: listFollowUps({ patientId, status: validStatus }) });
+  });
+  app.get("/api/follow-up/dead-letter", (req, res) => {
+    if (!requireScope(req, res, "read")) return;
+    const limit = Number(req.query.limit ?? 50);
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 50;
+    sendJson(res, 200, { ok: true, data: listFollowUpDeadLetters(safeLimit) });
   });
   app.post("/api/follow-up/:id/retry", async (req, res) => {
     if (!requireScope(req, res, "write")) return;

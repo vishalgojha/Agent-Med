@@ -31,12 +31,32 @@ export function runMigrations(): void {
   if (!followUpNames.has("last_error")) {
     db.exec("ALTER TABLE follow_ups ADD COLUMN last_error TEXT");
   }
+  if (!followUpNames.has("provider_message_id")) {
+    db.exec("ALTER TABLE follow_ups ADD COLUMN provider_message_id TEXT");
+  }
+  if (!followUpNames.has("dead_lettered_at")) {
+    db.exec("ALTER TABLE follow_ups ADD COLUMN dead_lettered_at TEXT");
+  }
 
   db.exec(
     `CREATE TABLE IF NOT EXISTS rate_limits (
       key TEXT PRIMARY KEY,
       window_start_ms INTEGER NOT NULL,
       count INTEGER NOT NULL
+    )`
+  );
+
+  db.exec(
+    `CREATE TABLE IF NOT EXISTS follow_up_dead_letters (
+      id TEXT PRIMARY KEY,
+      follow_up_id TEXT NOT NULL REFERENCES follow_ups(id),
+      patient_id TEXT NOT NULL REFERENCES patients(id),
+      doctor_id TEXT NOT NULL REFERENCES doctors(id),
+      reason TEXT NOT NULL,
+      last_error TEXT,
+      retry_count INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL
     )`
   );
 }

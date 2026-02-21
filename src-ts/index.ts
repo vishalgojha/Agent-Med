@@ -14,7 +14,7 @@ import { executeIntent } from "./engine/executor.js";
 import { getReplayById, listReplay, pruneReplayOlderThan } from "./engine/replay.js";
 import { createCapabilityHandlers, createRuntimeDeps } from "./runtime.js";
 import { startServer } from "./server.js";
-import { addPatient, getPatientById, listFollowUps, listPatients } from "./patients/store.js";
+import { addPatient, getPatientById, listFollowUpDeadLetters, listFollowUps, listPatients } from "./patients/store.js";
 import { Specialty } from "./types.js";
 import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
@@ -433,12 +433,25 @@ export async function runCli(argv = process.argv): Promise<void> {
     .command("follow-up-list")
     .description("list follow-up jobs")
     .option("--patient-id <patientId>")
-    .option("--status <status>", "scheduled|sent|failed")
+    .option("--status <status>", "scheduled|sent|failed|dead_letter")
     .action((opts) => {
       runMigrations();
       const status =
-        opts.status === "scheduled" || opts.status === "sent" || opts.status === "failed" ? opts.status : undefined;
+        opts.status === "scheduled" || opts.status === "sent" || opts.status === "failed" || opts.status === "dead_letter"
+          ? opts.status
+          : undefined;
       print({ ok: true, data: listFollowUps({ patientId: opts.patientId, status }) });
+    });
+
+  program
+    .command("follow-up-dead-letter-list")
+    .description("list dead-lettered follow-up jobs")
+    .option("--limit <limit>", "default 50", "50")
+    .action((opts) => {
+      runMigrations();
+      const limit = Number(opts.limit);
+      const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 50;
+      print({ ok: true, data: listFollowUpDeadLetters(safeLimit) });
     });
 
   program

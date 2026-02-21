@@ -52,8 +52,22 @@ CREATE TABLE IF NOT EXISTS follow_ups (
   status TEXT NOT NULL DEFAULT 'scheduled',
   retry_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
+  provider_message_id TEXT,
+  dead_lettered_at TEXT,
   created_at TEXT NOT NULL,
   UNIQUE (patient_id, trigger, scheduled_at)
+);
+
+CREATE TABLE IF NOT EXISTS follow_up_dead_letters (
+  id TEXT PRIMARY KEY,
+  follow_up_id TEXT NOT NULL REFERENCES follow_ups(id),
+  patient_id TEXT NOT NULL REFERENCES patients(id),
+  doctor_id TEXT NOT NULL REFERENCES doctors(id),
+  reason TEXT NOT NULL,
+  last_error TEXT,
+  retry_count INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS replay_log (
@@ -79,4 +93,6 @@ CREATE INDEX IF NOT EXISTS idx_notes_patient_created ON notes(patient_id, create
 CREATE INDEX IF NOT EXISTS idx_prior_auths_patient_status ON prior_auths(patient_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_status_schedule ON follow_ups(status, scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_retry_count ON follow_ups(status, retry_count, scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_provider_message_id ON follow_ups(provider_message_id);
+CREATE INDEX IF NOT EXISTS idx_follow_up_dead_letters_created ON follow_up_dead_letters(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_replay_executed ON replay_log(executed_at DESC);

@@ -53,6 +53,10 @@
   - `retryFailedFollowUp`
   - `dispatchDueFollowUps`
   - `retryFailedFollowUpsBulk` with bounded retry/backoff
+  - dead-letter workflow for exhausted retries / irrecoverable sends
+    - follow-up rows can transition to `dead_letter`
+    - dead-letter audit records stored in `follow_up_dead_letters`
+    - CLI/API read paths added for dead-letter triage
 
 ## Known Gaps / Improvements
 - `bin/doctor.js` assumes `dist/` exists; improve DX with a `build` check or use `tsx` launcher for dev installs.
@@ -72,7 +76,7 @@
 1. Add dashboard or TUI for triage queue and pending follow-ups.
 2. Move from static bearer tokens to signed token claims/JWT verification.
 3. Add systemd/k8s manifests and secret management docs for production rollout.
-4. Add dead-letter queue semantics for follow-ups that exceed max retries.
+4. Add dead-letter replay workflow (re-queue selected dead-letter items after operator review).
 5. Add structured webhook callbacks for delivery outcomes.
 
 ## Useful Commands

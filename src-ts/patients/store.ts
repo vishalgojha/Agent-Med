@@ -1,6 +1,6 @@
 import { getDb } from "../db/client.js";
 import { makeId, nowIso, safeJsonParse } from "../utils.js";
-import { FollowUpRecord, Patient } from "./types.js";
+import { FollowUpDeadLetterRecord, FollowUpRecord, Patient } from "./types.js";
 
 interface PatientRow {
   id: string;
@@ -22,9 +22,23 @@ interface FollowUpRow {
   channel: "sms" | "whatsapp";
   scheduled_at: string;
   sent_at: string | null;
-  status: "scheduled" | "sent" | "failed";
+  status: "scheduled" | "sent" | "failed" | "dead_letter";
   retry_count?: number;
   last_error?: string | null;
+  provider_message_id?: string | null;
+  dead_lettered_at?: string | null;
+  created_at: string;
+}
+
+interface FollowUpDeadLetterRow {
+  id: string;
+  follow_up_id: string;
+  patient_id: string;
+  doctor_id: string;
+  reason: string;
+  last_error: string | null;
+  retry_count: number;
+  payload: string;
   created_at: string;
 }
 
@@ -54,6 +68,22 @@ function mapFollowUp(row: FollowUpRow): FollowUpRecord {
     status: row.status,
     retryCount: row.retry_count ?? 0,
     lastError: row.last_error ?? undefined,
+    providerMessageId: row.provider_message_id ?? undefined,
+    deadLetteredAt: row.dead_lettered_at ?? undefined,
+    createdAt: row.created_at
+  };
+}
+
+function mapFollowUpDeadLetter(row: FollowUpDeadLetterRow): FollowUpDeadLetterRecord {
+  return {
+    id: row.id,
+    followUpId: row.follow_up_id,
+    patientId: row.patient_id,
+    doctorId: row.doctor_id,
+    reason: row.reason,
+    lastError: row.last_error ?? undefined,
+    retryCount: row.retry_count,
+    payload: row.payload,
     createdAt: row.created_at
   };
 }
@@ -164,6 +194,22 @@ export function markFollowUpSent(id: string, status: "sent" | "failed", sentAt: 
   db.prepare("UPDATE follow_ups SET status = ?, sent_at = ? WHERE id = ?").run(status, sentAt, id);
 }
 
+export function markFollowUpSentWithProvider(
+  id: string,
+  sentAt: string,
+  providerMessageId?: string
+): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE follow_ups
+     SET status = 'sent',
+         sent_at = ?,
+         provider_message_id = ?,
+         last_error = NULL
+     WHERE id = ?`
+  ).run(sentAt, providerMessageId ?? null, id);
+}
+
 export function markFollowUpFailedWithBackoff(id: string, retryCount: number, errorMessage: string, nextScheduledAt: string): void {
   const db = getDb();
   db.prepare(
@@ -171,10 +217,65 @@ export function markFollowUpFailedWithBackoff(id: string, retryCount: number, er
      SET status = 'scheduled',
          retry_count = ?,
          last_error = ?,
+         provider_message_id = NULL,
          scheduled_at = ?,
          sent_at = NULL
      WHERE id = ?`
   ).run(retryCount, errorMessage.slice(0, 500), nextScheduledAt, id);
+}
+
+export function moveFollowUpToDeadLetter(input: {
+  followUpId: string;
+  reason: string;
+  lastError?: string;
+  retryCount: number;
+}): FollowUpDeadLetterRecord {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM follow_ups WHERE id = ?").get(input.followUpId) as FollowUpRow | undefined;
+  if (!row) {
+    throw new Error("Follow-up not found");
+  }
+  const createdAt = nowIso();
+  const entry: FollowUpDeadLetterRecord = {
+    id: makeId("fdl"),
+    followUpId: row.id,
+    patientId: row.patient_id,
+    doctorId: row.doctor_id,
+    reason: input.reason,
+    lastError: input.lastError,
+    retryCount: input.retryCount,
+    payload: JSON.stringify(mapFollowUp(row)),
+    createdAt
+  };
+
+  db.prepare(
+    `INSERT INTO follow_up_dead_letters
+     (id, follow_up_id, patient_id, doctor_id, reason, last_error, retry_count, payload, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    entry.id,
+    entry.followUpId,
+    entry.patientId,
+    entry.doctorId,
+    entry.reason,
+    entry.lastError ?? null,
+    entry.retryCount,
+    entry.payload,
+    entry.createdAt
+  );
+
+  db.prepare(
+    `UPDATE follow_ups
+     SET status = 'dead_letter',
+         last_error = ?,
+         retry_count = ?,
+         dead_lettered_at = ?,
+         provider_message_id = NULL,
+         sent_at = NULL
+     WHERE id = ?`
+  ).run(entry.lastError ?? null, entry.retryCount, createdAt, row.id);
+
+  return entry;
 }
 
 export function getFollowUpById(id: string): FollowUpRecord | null {
@@ -185,7 +286,7 @@ export function getFollowUpById(id: string): FollowUpRecord | null {
 
 export function listFollowUps(filters?: {
   patientId?: string;
-  status?: "scheduled" | "sent" | "failed";
+  status?: "scheduled" | "sent" | "failed" | "dead_letter";
 }): FollowUpRecord[] {
   const db = getDb();
   if (filters?.patientId && filters?.status) {
@@ -235,4 +336,16 @@ export function listFailedFollowUps(limit = 50): FollowUpRecord[] {
     )
     .all(limit) as FollowUpRow[];
   return rows.map(mapFollowUp);
+}
+
+export function listFollowUpDeadLetters(limit = 50): FollowUpDeadLetterRecord[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT * FROM follow_up_dead_letters
+       ORDER BY created_at DESC
+       LIMIT ?`
+    )
+    .all(limit) as FollowUpDeadLetterRow[];
+  return rows.map(mapFollowUpDeadLetter);
 }

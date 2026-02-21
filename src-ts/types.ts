@@ -69,7 +69,7 @@ export interface FollowUpMessage {
   scheduledAt: string;
   channel: "sms" | "whatsapp";
   sentAt?: string;
-  status: "scheduled" | "sent" | "failed";
+  status: "scheduled" | "sent" | "failed" | "dead_letter";
 }
 
 export interface ClinicalAlert {
