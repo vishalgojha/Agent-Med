@@ -7,6 +7,9 @@ export interface Config {
   twilioAuthToken: string;
   twilioFromNumber: string;
   apiToken: string;
+  apiTokenRead: string;
+  apiTokenWrite: string;
+  apiTokenAdmin: string;
   apiRateLimitWindowMs: number;
   apiRateLimitMax: number;
   replayRetentionDays: number;
@@ -29,6 +32,9 @@ export function readConfig(): Config {
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? "",
     twilioFromNumber: process.env.TWILIO_FROM_NUMBER ?? "",
     apiToken: process.env.API_TOKEN ?? "",
+    apiTokenRead: process.env.API_TOKEN_READ ?? "",
+    apiTokenWrite: process.env.API_TOKEN_WRITE ?? "",
+    apiTokenAdmin: process.env.API_TOKEN_ADMIN ?? "",
     apiRateLimitWindowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS ?? 60000),
     apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX ?? 120),
     replayRetentionDays: Number(process.env.REPLAY_RETENTION_DAYS ?? 30),

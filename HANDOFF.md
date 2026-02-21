@@ -3,7 +3,7 @@
 ## Current Status
 - Project scaffold is complete and runnable.
 - `npm run typecheck` passes.
-- `npm test` passes (10/10).
+- `npm test` passes on local host runs; in this sandbox it fails with `spawn EPERM`.
 - `npm run init` runs migrations and health checks.
 
 ## What Is Implemented
@@ -12,7 +12,8 @@
   - `seed` command for rapid demos
 - API server via `express` in `src-ts/server.ts`
   - request payload validation (422 errors for malformed inputs)
-  - optional Bearer-token auth for `/api/*` via `API_TOKEN`
+  - optional Bearer-token auth for `/api/*` via `API_TOKEN` or scoped tokens:
+    - `API_TOKEN_READ`, `API_TOKEN_WRITE`, `API_TOKEN_ADMIN`
   - in-memory API rate limiting via `API_RATE_LIMIT_WINDOW_MS` and `API_RATE_LIMIT_MAX`
   - request trace via `x-request-id` and actor tagging via `x-actor-id`
   - prior-auth lifecycle routes (`GET`, `PATCH status`)
@@ -21,7 +22,7 @@
   - `/health/ready` readiness endpoint with DB + queue snapshot
   - replay prune endpoint for retention management
   - scheduled replay retention prune in `startServer`
-  - scope-based authorization via `x-token-scope` (`read|write|admin`) on sensitive routes
+  - scope-based authorization derived from authenticated bearer token (`read|write|admin`)
   - DB-backed API rate limiting via `rate_limits` table (shared state across processes)
 - SQLite storage via `better-sqlite3`:
   - schema: `src-ts/db/schema.sql`
@@ -69,7 +70,7 @@
 
 ## Suggested Next Tasks (Priority)
 1. Add dashboard or TUI for triage queue and pending follow-ups.
-2. Move token scope from header to signed token claims/JWT verification.
+2. Move from static bearer tokens to signed token claims/JWT verification.
 3. Add systemd/k8s manifests and secret management docs for production rollout.
 4. Add dead-letter queue semantics for follow-ups that exceed max retries.
 5. Add structured webhook callbacks for delivery outcomes.

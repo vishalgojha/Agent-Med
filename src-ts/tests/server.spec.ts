@@ -12,11 +12,33 @@ import { createIntent } from "../engine/intent.js";
 import { executeIntent } from "../engine/executor.js";
 import { createCapabilityHandlers } from "../runtime.js";
 
-async function startTestServer(options?: { apiToken?: string; rateLimitMax?: number; rateLimitWindowMs?: number }) {
+async function startTestServer(options?: {
+  apiToken?: string;
+  apiTokenRead?: string;
+  apiTokenWrite?: string;
+  apiTokenAdmin?: string;
+  rateLimitMax?: number;
+  rateLimitWindowMs?: number;
+}) {
   if (options?.apiToken) {
     process.env.API_TOKEN = options.apiToken;
   } else {
     delete process.env.API_TOKEN;
+  }
+  if (options?.apiTokenRead) {
+    process.env.API_TOKEN_READ = options.apiTokenRead;
+  } else {
+    delete process.env.API_TOKEN_READ;
+  }
+  if (options?.apiTokenWrite) {
+    process.env.API_TOKEN_WRITE = options.apiTokenWrite;
+  } else {
+    delete process.env.API_TOKEN_WRITE;
+  }
+  if (options?.apiTokenAdmin) {
+    process.env.API_TOKEN_ADMIN = options.apiTokenAdmin;
+  } else {
+    delete process.env.API_TOKEN_ADMIN;
   }
   if (options?.rateLimitMax !== undefined) {
     process.env.API_RATE_LIMIT_MAX = String(options.rateLimitMax);
@@ -374,10 +396,14 @@ test("api rate limit returns 429 after threshold", async () => {
 
 test("api scope blocks admin endpoint for read-only scope", async () => {
   const dbPath = setupTestDb("server-scope-block");
-  const svc = await startTestServer();
+  const svc = await startTestServer({
+    apiTokenRead: "read-token",
+    apiTokenWrite: "write-token",
+    apiTokenAdmin: "admin-token"
+  });
   try {
     const res = await fetch(`${svc.baseUrl}/api/ops/metrics`, {
-      headers: { "x-token-scope": "read" }
+      headers: { authorization: "Bearer read-token" }
     });
     assert.equal(res.status, 403);
     const body = (await res.json()) as { ok: boolean; code?: string };
@@ -391,14 +417,68 @@ test("api scope blocks admin endpoint for read-only scope", async () => {
 
 test("api scope allows admin endpoint for admin scope", async () => {
   const dbPath = setupTestDb("server-scope-allow");
-  const svc = await startTestServer();
+  const svc = await startTestServer({
+    apiTokenRead: "read-token",
+    apiTokenWrite: "write-token",
+    apiTokenAdmin: "admin-token"
+  });
   try {
     const res = await fetch(`${svc.baseUrl}/api/ops/metrics`, {
-      headers: { "x-token-scope": "admin" }
+      headers: { authorization: "Bearer admin-token" }
     });
     assert.equal(res.status, 200);
     const body = (await res.json()) as { ok: boolean };
     assert.equal(body.ok, true);
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api scope allows read endpoints for read token", async () => {
+  const dbPath = setupTestDb("server-scope-read-allowed");
+  const svc = await startTestServer({
+    apiTokenRead: "read-token",
+    apiTokenWrite: "write-token",
+    apiTokenAdmin: "admin-token"
+  });
+  try {
+    const res = await fetch(`${svc.baseUrl}/api/replay`, {
+      headers: { authorization: "Bearer read-token" }
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { ok: boolean };
+    assert.equal(body.ok, true);
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api scope blocks write endpoint for read token", async () => {
+  const dbPath = setupTestDb("server-scope-read-block-write");
+  const svc = await startTestServer({
+    apiTokenRead: "read-token",
+    apiTokenWrite: "write-token",
+    apiTokenAdmin: "admin-token"
+  });
+  try {
+    const res = await fetch(`${svc.baseUrl}/api/scribe`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer read-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        transcript: "Patient has mild fever",
+        patientId: "p_missing",
+        doctorId: "d_missing"
+      })
+    });
+    assert.equal(res.status, 403);
+    const body = (await res.json()) as { ok: boolean; code?: string };
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "FORBIDDEN");
   } finally {
     await svc.close();
     teardownTestDb(dbPath);

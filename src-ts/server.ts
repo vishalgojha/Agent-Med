@@ -19,14 +19,20 @@ function sendJson(res: Response, status: number, payload: unknown): void {
   res.status(status).json(payload);
 }
 
+type TokenScope = "read" | "write" | "admin";
+
+function isTokenScope(value: unknown): value is TokenScope {
+  return value === "read" || value === "write" || value === "admin";
+}
+
 function requireScope(req: Request, res: Response, required: "read" | "write" | "admin"): boolean {
-  const tokenScope = String(req.headers["x-token-scope"] ?? "admin");
+  const tokenScope = isTokenScope(res.locals.authScope) ? res.locals.authScope : null;
   const rank: Record<"read" | "write" | "admin", number> = {
     read: 1,
     write: 2,
     admin: 3
   };
-  if ((rank[tokenScope as keyof typeof rank] ?? 0) < rank[required]) {
+  if (!tokenScope || rank[tokenScope] < rank[required]) {
     sendJson(res, 403, appError("FORBIDDEN", `Requires scope '${required}'`));
     return false;
   }
@@ -157,8 +163,14 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
   const app = express();
   app.use(express.json({ limit: "2mb" }));
 
-  const { apiToken, apiRateLimitWindowMs, apiRateLimitMax } = getConfig();
+  const { apiToken, apiTokenRead, apiTokenWrite, apiTokenAdmin, apiRateLimitWindowMs, apiRateLimitMax } = getConfig();
   const rateWindow = new Map<string, { count: number; resetAt: number }>();
+  const scopeByToken = new Map<string, TokenScope>();
+  if (apiTokenRead) scopeByToken.set(apiTokenRead, "read");
+  if (apiTokenWrite) scopeByToken.set(apiTokenWrite, "write");
+  if (apiTokenAdmin) scopeByToken.set(apiTokenAdmin, "admin");
+  // Backward compatible single token support.
+  if (apiToken) scopeByToken.set(apiToken, "admin");
 
   app.use((req, res, next) => {
     const startedAt = Date.now();
@@ -182,16 +194,27 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
   });
 
   app.use((req, res, next) => {
-    if (!apiToken || !req.path.startsWith("/api")) {
+    if (!req.path.startsWith("/api")) {
+      next();
+      return;
+    }
+    if (scopeByToken.size === 0) {
+      res.locals.authScope = "admin";
       next();
       return;
     }
     const auth = req.header("authorization");
-    const expected = `Bearer ${apiToken}`;
-    if (auth !== expected) {
+    if (!auth?.startsWith("Bearer ")) {
       sendJson(res, 401, appError("UNAUTHORIZED", "Missing or invalid API token"));
       return;
     }
+    const rawToken = auth.slice("Bearer ".length).trim();
+    const scope = scopeByToken.get(rawToken);
+    if (!scope) {
+      sendJson(res, 401, appError("UNAUTHORIZED", "Missing or invalid API token"));
+      return;
+    }
+    res.locals.authScope = scope;
     next();
   });
 
@@ -252,11 +275,24 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     }
   });
 
-  app.post("/api/scribe", async (req, res) => handleCapability(req, res, "scribe", deps));
-  app.post("/api/prior-auth", async (req, res) => handleCapability(req, res, "prior_auth", deps));
-  app.post("/api/follow-up", async (req, res) => handleCapability(req, res, "follow_up", deps));
-  app.post("/api/decide", async (req, res) => handleCapability(req, res, "decision_support", deps));
+  app.post("/api/scribe", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
+    await handleCapability(req, res, "scribe", deps);
+  });
+  app.post("/api/prior-auth", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
+    await handleCapability(req, res, "prior_auth", deps);
+  });
+  app.post("/api/follow-up", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
+    await handleCapability(req, res, "follow_up", deps);
+  });
+  app.post("/api/decide", async (req, res) => {
+    if (!requireScope(req, res, "read")) return;
+    await handleCapability(req, res, "decision_support", deps);
+  });
   app.patch("/api/prior-auth/:id/status", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
     const body = asObject(req.body);
     if (!body) {
       sendJson(res, 400, appError("VALIDATION_ERROR", "Request body must be a JSON object"));
@@ -314,6 +350,7 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     sendJson(res, 200, { ok: true, data: listFollowUps({ patientId, status: validStatus }) });
   });
   app.post("/api/follow-up/:id/retry", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
     const body = asObject(req.body) ?? {};
     const intent = createIntent({
       capability: "follow_up",
@@ -337,6 +374,7 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     sendJson(res, 200, { ok: true, data: result.output });
   });
   app.post("/api/follow-up/dispatch", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
     const body = asObject(req.body) ?? {};
     const limit = Number(body.limit ?? 50);
     const intent = createIntent({
@@ -358,6 +396,7 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     sendJson(res, 200, { ok: true, data: result.output });
   });
   app.post("/api/follow-up/retry-failed-bulk", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
     const body = asObject(req.body) ?? {};
     const limit = Number(body.limit ?? 25);
     const intent = createIntent({

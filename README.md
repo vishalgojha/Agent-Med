@@ -21,11 +21,13 @@ Configure `.env`:
 - `ANTHROPIC_API_KEY`, `AI_MODEL`
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
 - `PORT`, `DB_PATH`, `DRY_RUN`, `API_TOKEN`
+- `API_TOKEN_READ`, `API_TOKEN_WRITE`, `API_TOKEN_ADMIN`
 - `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX`
 - `REPLAY_RETENTION_DAYS`, `REPLAY_RETENTION_INTERVAL_MS`
 
 Set `DRY_RUN=true` to disable outbound sends globally.
-Set `API_TOKEN` to protect `/api/*` routes with `Authorization: Bearer <token>`.
+Set `API_TOKEN` to protect `/api/*` routes with a single admin token.
+For scoped access, set `API_TOKEN_READ`, `API_TOKEN_WRITE`, and `API_TOKEN_ADMIN` and use matching bearer tokens.
 Replay retention pruning runs automatically in server mode using the retention env vars.
 
 ## Initialize
@@ -124,7 +126,6 @@ Optional trace headers:
 ```http
 x-request-id: your-request-id
 x-actor-id: doctor-or-service-id
-x-token-scope: read|write|admin
 ```
 
 Readiness endpoint:
