@@ -120,7 +120,7 @@ export async function runFollowUp(input: {
     scheduledAt
   });
 
-  const dryRun = Boolean(input.dryRun || cfg.dryRun);
+  const dryRun = input.dryRun ?? cfg.dryRun;
   const message: FollowUpMessage = {
     to: patient.phone ?? "",
     body,
@@ -168,7 +168,6 @@ export async function retryFailedFollowUp(input: {
   messaging: MessagingAdapter;
   dryRun?: boolean;
 }): Promise<FollowUpMessage> {
-  const cfg = getConfig();
   const record = getFollowUpById(input.id);
   if (!record) {
     throw new Error("Follow-up not found");
@@ -182,7 +181,7 @@ export async function retryFailedFollowUp(input: {
     throw new Error("Patient phone number is required for retry");
   }
 
-  const dryRun = Boolean(input.dryRun || cfg.dryRun);
+  const dryRun = input.dryRun ?? false;
   const message: FollowUpMessage = {
     to: patient.phone,
     body: record.body,
@@ -233,7 +232,7 @@ export async function dispatchDueFollowUps(input: {
   limit?: number;
 }): Promise<{ attempted: number; sent: number; failed: number; dryRun: boolean }> {
   const cfg = getConfig();
-  const dryRun = Boolean(input.dryRun || cfg.dryRun);
+  const dryRun = input.dryRun ?? cfg.dryRun;
   const due = listDueFollowUps(input.limit ?? 50);
   let sent = 0;
   let failed = 0;
@@ -296,7 +295,7 @@ export async function retryFailedFollowUpsBulk(input: {
   limit?: number;
 }): Promise<{ attempted: number; sent: number; failed: number; skipped: number; dryRun: boolean }> {
   const cfg = getConfig();
-  const dryRun = Boolean(input.dryRun || cfg.dryRun);
+  const dryRun = input.dryRun ?? cfg.dryRun;
   const failedRows = listFailedFollowUps(input.limit ?? 25);
   let sent = 0;
   let failed = 0;
@@ -337,7 +336,7 @@ export async function requeueDeadLetterFollowUp(input: {
   }
 
   const now = nowIso();
-  const dryRun = Boolean(input.dryRun || cfg.dryRun);
+  const dryRun = input.dryRun ?? cfg.dryRun;
   if (dryRun) {
     logger.info("Dry-run dead-letter requeue", {
       deadLetterId: input.deadLetterId,

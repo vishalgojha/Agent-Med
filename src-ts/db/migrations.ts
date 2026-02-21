@@ -3,11 +3,56 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getDb } from "./client.js";
 
+function tableExists(table: string): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(table) as { name?: string } | undefined;
+  return Boolean(row?.name);
+}
+
 export function runMigrations(): void {
   const db = getDb();
   const here = path.dirname(fileURLToPath(import.meta.url));
   const schemaPath = path.resolve(here, "schema.sql");
   const sql = fs.readFileSync(schemaPath, "utf8");
+
+  // Legacy DBs can miss follow_ups.retry_count while schema.sql tries to build
+  // an index on that column. Backfill required columns before applying schema.
+  if (tableExists("follow_ups")) {
+    const followUpColumnsPre = db
+      .prepare("PRAGMA table_info(follow_ups)")
+      .all() as Array<{ name: string }>;
+    const followUpNamesPre = new Set(followUpColumnsPre.map((c) => c.name));
+    if (!followUpNamesPre.has("retry_count")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!followUpNamesPre.has("last_error")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN last_error TEXT");
+    }
+    if (!followUpNamesPre.has("provider_message_id")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN provider_message_id TEXT");
+    }
+    if (!followUpNamesPre.has("delivery_status")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN delivery_status TEXT");
+    }
+    if (!followUpNamesPre.has("delivered_at")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN delivered_at TEXT");
+    }
+    if (!followUpNamesPre.has("failed_at")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN failed_at TEXT");
+    }
+    if (!followUpNamesPre.has("provider_error_code")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN provider_error_code TEXT");
+    }
+    if (!followUpNamesPre.has("provider_error_message")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN provider_error_message TEXT");
+    }
+    if (!followUpNamesPre.has("dead_lettered_at")) {
+      db.exec("ALTER TABLE follow_ups ADD COLUMN dead_lettered_at TEXT");
+    }
+  }
+
   db.exec(sql);
 
   const replayColumns = db
