@@ -86,6 +86,7 @@ npm run start -- follow-up-dispatch --confirm --dry-run
 npm run start -- follow-up-queue-pending-list --limit 50
 npm run start -- follow-up-queue-pending-show --id fu_123
 npm run start -- follow-up-queue-failed-list --limit 50
+npm run start -- follow-up-queue-failed-show --id fu_123
 npm run start -- follow-up-queue-failed-requeue --id fu_123 --reset-retry-count
 npm run start -- follow-up-queue-failed-retry --id fu_123 --dry-run
 npm run start -- follow-up-queue-failed-retry --id fu_123 --confirm
@@ -122,6 +123,7 @@ Endpoints:
 - `GET /api/follow-up/queue/pending`
 - `GET /api/follow-up/queue/pending/:id`
 - `GET /api/follow-up/queue/failed`
+- `GET /api/follow-up/queue/failed/:id`
 - `POST /api/follow-up/queue/failed/:id/requeue`
 - `POST /api/follow-up/queue/failed/:id/retry`
 - `GET /api/ops/metrics`

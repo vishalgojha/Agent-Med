@@ -745,6 +745,24 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
       sendJson(res, 500, toStructuredError(error));
     }
   });
+  app.get("/api/follow-up/queue/failed/:id", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const row = await getFailedDeliveryById(req.params.id);
+      if (!row) {
+        sendJson(res, 404, appError("NOT_FOUND", "Failed delivery not found"));
+        return;
+      }
+      sendJson(res, 200, { ok: true, data: row });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "invalid delivery queue id") {
+        sendJson(res, 422, appError("VALIDATION_ERROR", message));
+        return;
+      }
+      sendJson(res, 500, toStructuredError(error));
+    }
+  });
   app.post("/api/follow-up/queue/failed/:id/requeue", async (req, res) => {
     if (!requireScope(req, res, "admin")) return;
     try {

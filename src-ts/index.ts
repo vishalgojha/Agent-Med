@@ -533,6 +533,29 @@ export async function runCli(argv = process.argv): Promise<void> {
     });
 
   program
+    .command("follow-up-queue-failed-show")
+    .description("show a failed durable follow-up delivery queue item")
+    .requiredOption("--id <queueId>")
+    .action(async (opts) => {
+      runMigrations();
+      try {
+        const row = await getFailedDeliveryById(String(opts.id));
+        if (!row) {
+          print({ ok: false, code: "NOT_FOUND", message: "Failed delivery not found" });
+          return;
+        }
+        print({ ok: true, data: row });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "invalid delivery queue id") {
+          print({ ok: false, code: "VALIDATION_ERROR", message });
+          return;
+        }
+        throw error;
+      }
+    });
+
+  program
     .command("follow-up-queue-failed-requeue")
     .description("move a failed durable queue item back to pending queue")
     .requiredOption("--id <queueId>")

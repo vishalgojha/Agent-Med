@@ -941,6 +941,34 @@ test("api failed queue list returns durable failed entries", async () => {
   }
 });
 
+test("api failed queue show returns a single durable failed entry", async () => {
+  const dbPath = setupTestDb("server-failed-queue-show");
+  const svc = await startTestServer();
+  try {
+    writeFailedQueueEntry({
+      dbPath,
+      queueId: "fu_queue_failed_show_1",
+      followUpId: "fu_queue_failed_show_1",
+      retryCount: 4,
+      lastError: "provider timeout"
+    });
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/queue/failed/fu_queue_failed_show_1`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: { id: string; followUpId: string; retryCount: number; lastError?: string };
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.id, "fu_queue_failed_show_1");
+    assert.equal(body.data.followUpId, "fu_queue_failed_show_1");
+    assert.equal(body.data.retryCount, 4);
+    assert.equal(body.data.lastError, "provider timeout");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
 test("api failed queue requeue moves item back to pending queue", async () => {
   const dbPath = setupTestDb("server-failed-queue-requeue");
   const svc = await startTestServer();
