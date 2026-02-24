@@ -1,108 +1,41 @@
-# doctor-agent Handoff
+# Handoff - doctor-agent
 
-## Current Status
-- Project scaffold is complete and runnable.
-- `npm run typecheck` passes.
-- `npm test` passes on local host runs; in this sandbox it fails with `spawn EPERM`.
-- `npm run init` runs migrations and health checks.
+Date: 2026-02-24
+Branch: `main`
+Repo: `https://github.com/vishalgojha/doctor-agent.git`
 
-## What Is Implemented
-- CLI via `commander` in `src-ts/index.ts`
-  - nested doctor commands (`doctor add/list/show/health`)
-  - `seed` command for rapid demos
-- API server via `express` in `src-ts/server.ts`
-  - request payload validation (422 errors for malformed inputs)
-  - optional Bearer-token auth for `/api/*` via `API_TOKEN` or scoped tokens:
-    - `API_TOKEN_READ`, `API_TOKEN_WRITE`, `API_TOKEN_ADMIN`
-  - in-memory API rate limiting via `API_RATE_LIMIT_WINDOW_MS` and `API_RATE_LIMIT_MAX`
-  - request trace via `x-request-id` and actor tagging via `x-actor-id`
-  - prior-auth lifecycle routes (`GET`, `PATCH status`)
-  - doctor/patient registry routes (`GET/POST /api/doctors`, `GET/POST /api/patients`)
-  - follow-up listing and retry routes
-  - Twilio delivery-status webhook route (`POST /webhooks/twilio/status`)
-  - manual due-dispatch route for scheduled follow-ups
-  - `/health/ready` readiness endpoint with DB + queue snapshot
-  - replay prune endpoint for retention management
-  - scheduled replay retention prune in `startServer`
-  - scope-based authorization derived from authenticated bearer token (`read|write|admin`)
-  - DB-backed API rate limiting via `rate_limits` table (shared state across processes)
-  - serves React UI from `ui/dist` when present
-- SQLite storage via `better-sqlite3`:
-  - schema: `src-ts/db/schema.sql`
-  - client/migrations: `src-ts/db/client.ts`, `src-ts/db/migrations.ts`
-- Core engine:
-  - intent creation: `src-ts/engine/intent.ts`
-  - risk gate + countdown: `src-ts/engine/risk.ts`
-  - executor + replay append: `src-ts/engine/executor.ts`, `src-ts/engine/replay.ts`
-  - replay rows now include `request_id` and `actor_id`
-- Ops metrics snapshot utility:
-  - `src-ts/ops/metrics.ts`
-- React UI console (`ui/`):
-  - Vite + React dashboard for Registry, Ops, Scribe, Prior Auth, Follow-up, Decision Support, Dead Letters, Replay
-  - token-aware API client for scoped bearer tokens
-  - scripts: `ui:install`, `ui:dev`, `ui:build`, `build:all`
-- AI layer:
-  - provider interface + Anthropic/stub clients: `src-ts/ai/client.ts`
-  - prompt loader: `src-ts/ai/prompts.ts`
-  - robust JSON extractor: `src-ts/ai/parser.ts`
-- Capabilities:
-  - scribe: `src-ts/capabilities/scribe.ts`
-  - prior auth: `src-ts/capabilities/prior-auth.ts`
-  - follow-up + queue: `src-ts/capabilities/follow-up.ts`
-  - decision support + disclaimer: `src-ts/capabilities/decision-support.ts`
-- Messaging adapters:
-  - interface/stub/twilio: `src-ts/messaging/`
-- PHI redaction logger: `src-ts/logger.ts`
-- Prior-auth lifecycle utilities:
-  - `listPriorAuths`, `getPriorAuthById`, `updatePriorAuthStatus`
-- Follow-up operational utility:
-  - `listFollowUps`
-  - `retryFailedFollowUp`
-  - `dispatchDueFollowUps`
-  - `retryFailedFollowUpsBulk` with bounded retry/backoff
-  - dead-letter workflow for exhausted retries / irrecoverable sends
-    - follow-up rows can transition to `dead_letter`
-    - dead-letter audit records stored in `follow_up_dead_letters`
-    - CLI/API read paths added for dead-letter triage
-    - requeue path added from dead-letter back to `scheduled`
-  - provider delivery reconciliation by `provider_message_id`:
-    - tracks `delivery_status`, `delivered_at`, `failed_at`
-    - records provider error code/message on undelivered failures
-    - provider event idempotency table + monotonic transition guardrails
+## Scope Completed
 
-## Known Gaps / Improvements
-- `bin/doctor.js` assumes `dist/` exists; improve DX with a `build` check or use `tsx` launcher for dev installs.
-- Add stricter validation for optional fields (`age`, `weight`, `channel`) in CLI parsing.
-- Expand API route coverage tests for all success and risk-gate paths.
+### Durable queue reliability and controls
+- Added durable follow-up delivery queue with startup recovery and backoff.
+- Added persistent Twilio webhook dedupe and payload hardening.
+- Added admin APIs for failed queue list/requeue/retry.
+- Added CLI commands for failed queue list/requeue/retry.
 
-## Safety / Compliance Notes
-- Keep strict no-PHI logging behavior:
-  - redact keys in logger before any output.
-- Keep decision-support disclaimer in every response.
-- Preserve risk gates:
-  - HIGH requires explicit confirmation.
-  - CRITICAL requires confirmation + countdown.
-- Do not add `exec`, `spawn`, or `eval` in app code.
+### Queue visibility
+- Added admin APIs for pending queue list/show.
+- Added CLI commands for pending queue list/show.
 
-## Suggested Next Tasks (Priority)
-1. Move from static bearer tokens to signed token claims/JWT verification.
-2. Add systemd/k8s manifests and secret management docs for production rollout.
-3. Add dead-letter replay audit metadata (`requeued_by`, `requeued_at`, reason).
-4. Add provider callback retries + signature validation integration test coverage.
-5. Add patient list/search pagination for high-volume clinics.
+### Failed item inspection
+- Added admin API: `GET /api/follow-up/queue/failed/:id`
+- Added CLI command: `follow-up-queue-failed-show`
 
-## Useful Commands
-```bash
-npm install
-npm run typecheck
-npm test
-npm run init
-npm run start -- health
-npm run serve
-```
+### Pending queue cancellation
+- Added queue helper: remove pending entry by ID.
+- Added admin API: `DELETE /api/follow-up/queue/pending/:id`
+  - Supports `dryRun: true`
+  - Requires `confirm: true` for destructive cancel
+- Added CLI command: `follow-up-queue-pending-cancel --id <queueId> [--dry-run|--confirm]`
 
-## Quick Smoke Flow
-1. `npm run init`
-2. Create doctor: `npm run start -- doctor add --name "Dr. Demo" --specialty primary_care`
-3. Create patient: `npm run start -- patient add --doctor-id <doctorId> --name "Jane Doe" --phone +15551234567`
-4. Run scribe/prior-auth/follow-up/decide commands with created IDs.
+## Recent Commits
+- `e15ca60` feat: add pending queue cancellation endpoint and cli safeguards
+- `b4fdce0` feat: add failed queue item inspection endpoint and cli
+- `f5fd25a` feat: add pending delivery queue visibility endpoints and cli
+- `b5ec7f8` feat: add durable follow-up queue recovery and admin controls
+
+## Validation
+- `npm run typecheck` passed.
+- `npm test` passed (44/44).
+
+## Suggested Next Step
+- Add bulk pending queue cancel endpoint/CLI with the same `dryRun` + `confirm` safety model.
