@@ -31,9 +31,11 @@ import { logger } from "./logger.js";
 import {
   getPendingDeliveryById,
   getFailedDeliveryById,
+  inspectPendingDeliveriesByIds,
   listPendingDeliveries,
   listFailedDeliveries,
   removePendingDeliveryById,
+  removePendingDeliveriesByIds,
   recoverPendingDeliveries,
   requeueFailedDelivery,
   retryFailedDeliveryNow
@@ -779,6 +781,64 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
         sendJson(res, 404, appError("NOT_FOUND", message));
         return;
       }
+      if (message === "invalid delivery queue id") {
+        sendJson(res, 422, appError("VALIDATION_ERROR", message));
+        return;
+      }
+      sendJson(res, 500, toStructuredError(error));
+    }
+  });
+  app.post("/api/follow-up/queue/pending/cancel-bulk", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const body = asObject(req.body) ?? {};
+      const ids = requireStringArray(body, "ids");
+      if (!ids || ids.length === 0) {
+        sendJson(res, 422, appError("VALIDATION_ERROR", "ids must be a non-empty string[]"));
+        return;
+      }
+      const queueIds = Array.from(new Set(ids.map((id) => id.trim())));
+      if (queueIds.length > 500) {
+        sendJson(res, 422, appError("VALIDATION_ERROR", "ids must contain at most 500 queue ids"));
+        return;
+      }
+      const dryRun = Boolean(body.dryRun);
+      const confirm = Boolean(body.confirm);
+      if (dryRun) {
+        const preview = await inspectPendingDeliveriesByIds(queueIds);
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            status: "dry_run",
+            attempted: queueIds.length,
+            entries: preview.entries,
+            missingIds: preview.missingIds
+          }
+        });
+        return;
+      }
+      if (!confirm) {
+        sendJson(
+          res,
+          409,
+          appError("RISK_CONFIRMATION_REQUIRED", "Pending queue bulk cancel requires confirm=true", {
+            requiredConfirmation: true
+          })
+        );
+        return;
+      }
+      const cancelled = await removePendingDeliveriesByIds(queueIds);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          status: "cancelled",
+          attempted: queueIds.length,
+          cancelled: cancelled.cancelled,
+          missingIds: cancelled.missingIds
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       if (message === "invalid delivery queue id") {
         sendJson(res, 422, appError("VALIDATION_ERROR", message));
         return;

@@ -985,6 +985,100 @@ test("api pending queue cancel confirm removes queue item", async () => {
   }
 });
 
+test("api pending queue bulk cancel requires confirm unless dry-run", async () => {
+  const dbPath = setupTestDb("server-pending-queue-cancel-bulk-confirm");
+  const svc = await startTestServer();
+  try {
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_bulk_1",
+      followUpId: "fu_queue_pending_bulk_1"
+    });
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_bulk_2",
+      followUpId: "fu_queue_pending_bulk_2"
+    });
+
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/cancel-bulk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: ["fu_queue_pending_bulk_1", "fu_queue_pending_bulk_2"] })
+    });
+    assert.equal(res.status, 409);
+    const body = (await res.json()) as { ok: boolean; code?: string };
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "RISK_CONFIRMATION_REQUIRED");
+
+    const dryRunRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/cancel-bulk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: ["fu_queue_pending_bulk_1", "fu_queue_pending_bulk_2"], dryRun: true })
+    });
+    assert.equal(dryRunRes.status, 200);
+    const dryRunBody = (await dryRunRes.json()) as {
+      ok: boolean;
+      data: { status: string; attempted: number; entries: Array<{ id: string }>; missingIds: string[] };
+    };
+    assert.equal(dryRunBody.ok, true);
+    assert.equal(dryRunBody.data.status, "dry_run");
+    assert.equal(dryRunBody.data.attempted, 2);
+    assert.equal(dryRunBody.data.entries.length, 2);
+    assert.equal(dryRunBody.data.missingIds.length, 0);
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api pending queue bulk cancel confirm removes existing items and reports missing ids", async () => {
+  const dbPath = setupTestDb("server-pending-queue-cancel-bulk-confirm-send");
+  const svc = await startTestServer();
+  try {
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_bulk_3",
+      followUpId: "fu_queue_pending_bulk_3"
+    });
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_bulk_4",
+      followUpId: "fu_queue_pending_bulk_4"
+    });
+
+    const cancelRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/cancel-bulk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ids: ["fu_queue_pending_bulk_3", "fu_queue_pending_bulk_missing", "fu_queue_pending_bulk_4"],
+        confirm: true
+      })
+    });
+    assert.equal(cancelRes.status, 200);
+    const cancelBody = (await cancelRes.json()) as {
+      ok: boolean;
+      data: { status: string; attempted: number; cancelled: Array<{ id: string }>; missingIds: string[] };
+    };
+    assert.equal(cancelBody.ok, true);
+    assert.equal(cancelBody.data.status, "cancelled");
+    assert.equal(cancelBody.data.attempted, 3);
+    assert.equal(cancelBody.data.cancelled.length, 2);
+    assert.deepEqual(
+      cancelBody.data.cancelled.map((entry) => entry.id).sort(),
+      ["fu_queue_pending_bulk_3", "fu_queue_pending_bulk_4"]
+    );
+    assert.deepEqual(cancelBody.data.missingIds, ["fu_queue_pending_bulk_missing"]);
+
+    const showOneRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/fu_queue_pending_bulk_3`);
+    assert.equal(showOneRes.status, 404);
+    const showTwoRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/fu_queue_pending_bulk_4`);
+    assert.equal(showTwoRes.status, 404);
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
 test("api failed queue list returns durable failed entries", async () => {
   const dbPath = setupTestDb("server-failed-queue-list");
   const svc = await startTestServer();

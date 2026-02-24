@@ -27,7 +27,17 @@ Repo: `https://github.com/vishalgojha/doctor-agent.git`
   - Requires `confirm: true` for destructive cancel
 - Added CLI command: `follow-up-queue-pending-cancel --id <queueId> [--dry-run|--confirm]`
 
+### Bulk pending queue cancellation
+- Added queue helpers for bulk pending inspection/cancel by IDs.
+- Added admin API: `POST /api/follow-up/queue/pending/cancel-bulk`
+  - Accepts `ids: string[]` (max 500)
+  - Supports `dryRun: true`
+  - Requires `confirm: true` for destructive cancel
+  - Returns `missingIds` for partial operations
+- Added CLI command: `follow-up-queue-pending-cancel-bulk --ids <queueId1,queueId2,...> [--dry-run|--confirm]`
+
 ## Recent Commits
+- `ecef0be` docs: add project handoff for queue admin enhancements
 - `e15ca60` feat: add pending queue cancellation endpoint and cli safeguards
 - `b4fdce0` feat: add failed queue item inspection endpoint and cli
 - `f5fd25a` feat: add pending delivery queue visibility endpoints and cli
@@ -35,7 +45,16 @@ Repo: `https://github.com/vishalgojha/doctor-agent.git`
 
 ## Validation
 - `npm run typecheck` passed.
-- `npm test` passed (44/44).
+- `npm test` passed (46/46).
+
+## Critical Start (Build Blind Spots)
+- Fail closed on API auth when no token is configured; remove implicit admin mode.
+- Disable silent provider stubs in production (`AI` and `Twilio` paths should error on missing config).
+- Add a dispatch claim/lock step to prevent double-send under concurrent dispatch execution.
+- Require/enforce Twilio webhook signature validation in production (`TWILIO_WEBHOOK_VALIDATE=true`).
+- Harden Docker build/runtime path: include test gate in CI, build UI artifact in release flow, and run as non-root.
+- Restrict replay exposure and data retention (replay output currently stores raw action output and is readable with `read` scope).
+- Add rate-limit maintenance and proxy-aware client keying.
 
 ## Suggested Next Step
-- Add bulk pending queue cancel endpoint/CLI with the same `dryRun` + `confirm` safety model.
+- Implement critical item 1 first (fail-closed auth), then 2 and 3 in the same hardening branch.

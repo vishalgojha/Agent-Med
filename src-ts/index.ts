@@ -20,9 +20,11 @@ import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
 import {
   getPendingDeliveryById,
+  inspectPendingDeliveriesByIds,
   getFailedDeliveryById,
   listPendingDeliveries,
   listFailedDeliveries,
+  removePendingDeliveriesByIds,
   removePendingDeliveryById,
   requeueFailedDelivery,
   retryFailedDeliveryNow
@@ -568,6 +570,65 @@ export async function runCli(argv = process.argv): Promise<void> {
           print({ ok: false, code: "NOT_FOUND", message });
           return;
         }
+        if (message === "invalid delivery queue id") {
+          print({ ok: false, code: "VALIDATION_ERROR", message });
+          return;
+        }
+        throw error;
+      }
+    });
+
+  program
+    .command("follow-up-queue-pending-cancel-bulk")
+    .description("cancel and remove multiple pending durable follow-up delivery queue items")
+    .requiredOption("--ids <queueIds>", "comma-separated queue IDs")
+    .option("--confirm")
+    .option("--dry-run")
+    .action(async (opts) => {
+      runMigrations();
+      try {
+        const queueIds = Array.from(new Set(splitCsv(String(opts.ids))));
+        if (queueIds.length === 0) {
+          print({ ok: false, code: "VALIDATION_ERROR", message: "--ids must be a non-empty comma-separated list" });
+          return;
+        }
+        if (queueIds.length > 500) {
+          print({ ok: false, code: "VALIDATION_ERROR", message: "--ids must contain at most 500 queue IDs" });
+          return;
+        }
+        if (Boolean(opts.dryRun)) {
+          const preview = await inspectPendingDeliveriesByIds(queueIds);
+          print({
+            ok: true,
+            data: {
+              status: "dry_run",
+              attempted: queueIds.length,
+              entries: preview.entries,
+              missingIds: preview.missingIds
+            }
+          });
+          return;
+        }
+        if (!Boolean(opts.confirm)) {
+          print({
+            ok: false,
+            code: "RISK_CONFIRMATION_REQUIRED",
+            message: "Pending queue bulk cancel requires --confirm"
+          });
+          return;
+        }
+        const cancelled = await removePendingDeliveriesByIds(queueIds);
+        print({
+          ok: true,
+          data: {
+            status: "cancelled",
+            attempted: queueIds.length,
+            cancelled: cancelled.cancelled,
+            missingIds: cancelled.missingIds
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         if (message === "invalid delivery queue id") {
           print({ ok: false, code: "VALIDATION_ERROR", message });
           return;

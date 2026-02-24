@@ -309,6 +309,28 @@ export async function getPendingDeliveryById(queueId: string): Promise<QueuedDel
   return await safeReadJson<QueuedDelivery>(resolveQueuedFilePath(queueId));
 }
 
+function normalizePendingQueueIds(queueIds: string[]): string[] {
+  return Array.from(new Set(queueIds.map((queueId) => safeQueueId(queueId))));
+}
+
+export async function inspectPendingDeliveriesByIds(queueIds: string[]): Promise<{
+  entries: QueuedDelivery[];
+  missingIds: string[];
+}> {
+  const ids = normalizePendingQueueIds(queueIds);
+  const entries: QueuedDelivery[] = [];
+  const missingIds: string[] = [];
+  for (const id of ids) {
+    const entry = await getPendingDeliveryById(id);
+    if (!entry) {
+      missingIds.push(id);
+      continue;
+    }
+    entries.push(entry);
+  }
+  return { entries, missingIds };
+}
+
 export async function removePendingDeliveryById(queueId: string): Promise<QueuedDelivery> {
   const entry = await getPendingDeliveryById(queueId);
   if (!entry) {
@@ -327,6 +349,29 @@ export async function removePendingDeliveryById(queueId: string): Promise<Queued
     throw error;
   }
   return entry;
+}
+
+export async function removePendingDeliveriesByIds(queueIds: string[]): Promise<{
+  cancelled: QueuedDelivery[];
+  missingIds: string[];
+}> {
+  const ids = normalizePendingQueueIds(queueIds);
+  const cancelled: QueuedDelivery[] = [];
+  const missingIds: string[] = [];
+  for (const id of ids) {
+    try {
+      const entry = await removePendingDeliveryById(id);
+      cancelled.push(entry);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "Pending delivery not found") {
+        missingIds.push(id);
+        continue;
+      }
+      throw error;
+    }
+  }
+  return { cancelled, missingIds };
 }
 
 export async function listFailedDeliveries(limit = 50): Promise<QueuedDelivery[]> {
