@@ -29,7 +29,9 @@ import {
 } from "./patients/store.js";
 import { logger } from "./logger.js";
 import {
+  getPendingDeliveryById,
   getFailedDeliveryById,
+  listPendingDeliveries,
   listFailedDeliveries,
   recoverPendingDeliveries,
   requeueFailedDelivery,
@@ -700,6 +702,36 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
       return;
     }
     sendJson(res, 200, { ok: true, data: result.output });
+  });
+
+  app.get("/api/follow-up/queue/pending", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const limit = Number(req.query.limit ?? 50);
+      const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 50;
+      const entries = await listPendingDeliveries(safeLimit);
+      sendJson(res, 200, { ok: true, data: entries });
+    } catch (error) {
+      sendJson(res, 500, toStructuredError(error));
+    }
+  });
+  app.get("/api/follow-up/queue/pending/:id", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const row = await getPendingDeliveryById(req.params.id);
+      if (!row) {
+        sendJson(res, 404, appError("NOT_FOUND", "Pending delivery not found"));
+        return;
+      }
+      sendJson(res, 200, { ok: true, data: row });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "invalid delivery queue id") {
+        sendJson(res, 422, appError("VALIDATION_ERROR", message));
+        return;
+      }
+      sendJson(res, 500, toStructuredError(error));
+    }
   });
 
   app.get("/api/follow-up/queue/failed", async (req, res) => {

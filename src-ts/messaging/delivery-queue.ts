@@ -299,6 +299,16 @@ export async function listQueuedDeliveries(): Promise<QueuedDelivery[]> {
   return await listDeliveriesInDir(resolveQueueDir());
 }
 
+export async function listPendingDeliveries(limit = 50): Promise<QueuedDelivery[]> {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 50;
+  const entries = await listQueuedDeliveries();
+  return entries.slice(0, safeLimit);
+}
+
+export async function getPendingDeliveryById(queueId: string): Promise<QueuedDelivery | null> {
+  return await safeReadJson<QueuedDelivery>(resolveQueuedFilePath(queueId));
+}
+
 export async function listFailedDeliveries(limit = 50): Promise<QueuedDelivery[]> {
   const queueDir = resolveQueueDir();
   const failedDir = resolveFailedDir(queueDir);

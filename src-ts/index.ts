@@ -19,7 +19,9 @@ import { Specialty } from "./types.js";
 import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
 import {
+  getPendingDeliveryById,
   getFailedDeliveryById,
+  listPendingDeliveries,
   listFailedDeliveries,
   requeueFailedDelivery,
   retryFailedDeliveryNow
@@ -481,6 +483,41 @@ export async function runCli(argv = process.argv): Promise<void> {
       });
       const result = await executeIntent(intent, createCapabilityHandlers(deps), cliExecuteOptions());
       print(result.ok === false ? result : { ok: true, data: result.output });
+    });
+
+  program
+    .command("follow-up-queue-pending-list")
+    .description("list pending durable follow-up delivery queue items")
+    .option("--limit <limit>", "default 50", "50")
+    .action(async (opts) => {
+      runMigrations();
+      const limit = Number(opts.limit);
+      const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 50;
+      const rows = await listPendingDeliveries(safeLimit);
+      print({ ok: true, data: rows });
+    });
+
+  program
+    .command("follow-up-queue-pending-show")
+    .description("show a pending durable follow-up delivery queue item")
+    .requiredOption("--id <queueId>")
+    .action(async (opts) => {
+      runMigrations();
+      try {
+        const row = await getPendingDeliveryById(String(opts.id));
+        if (!row) {
+          print({ ok: false, code: "NOT_FOUND", message: "Pending delivery not found" });
+          return;
+        }
+        print({ ok: true, data: row });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "invalid delivery queue id") {
+          print({ ok: false, code: "VALIDATION_ERROR", message });
+          return;
+        }
+        throw error;
+      }
     });
 
   program

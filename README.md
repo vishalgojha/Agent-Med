@@ -83,6 +83,8 @@ npm run start -- follow-up-dead-letter-requeue --id fdl_123
 npm run start -- follow-up-retry --id fu_123 --confirm --dry-run
 npm run start -- follow-up-retry-bulk --confirm --dry-run --limit 25
 npm run start -- follow-up-dispatch --confirm --dry-run
+npm run start -- follow-up-queue-pending-list --limit 50
+npm run start -- follow-up-queue-pending-show --id fu_123
 npm run start -- follow-up-queue-failed-list --limit 50
 npm run start -- follow-up-queue-failed-requeue --id fu_123 --reset-retry-count
 npm run start -- follow-up-queue-failed-retry --id fu_123 --dry-run
@@ -117,6 +119,8 @@ Endpoints:
 - `POST /api/follow-up/:id/retry`
 - `POST /api/follow-up/retry-failed-bulk`
 - `POST /api/follow-up/dispatch`
+- `GET /api/follow-up/queue/pending`
+- `GET /api/follow-up/queue/pending/:id`
 - `GET /api/follow-up/queue/failed`
 - `POST /api/follow-up/queue/failed/:id/requeue`
 - `POST /api/follow-up/queue/failed/:id/retry`

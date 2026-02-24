@@ -136,6 +136,34 @@ function writeFailedQueueEntry(params: {
   );
 }
 
+function writePendingQueueEntry(params: {
+  dbPath: string;
+  queueId: string;
+  followUpId: string;
+  to?: string;
+  body?: string;
+  channel?: "sms" | "whatsapp";
+  retryCount?: number;
+  lastError?: string;
+}): void {
+  const queueDir = resolveDeliveryQueuePathForDbPath(params.dbPath);
+  fs.mkdirSync(queueDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(queueDir, `${params.queueId}.json`),
+    JSON.stringify({
+      id: params.queueId,
+      followUpId: params.followUpId,
+      to: params.to ?? "+15550009999",
+      body: params.body ?? "Please call clinic.",
+      channel: params.channel ?? "sms",
+      enqueuedAt: Date.now(),
+      retryCount: params.retryCount ?? 1,
+      lastError: params.lastError
+    }),
+    "utf-8"
+  );
+}
+
 test("api validation blocks malformed request", async () => {
   const dbPath = setupTestDb("server-validation");
   const svc = await startTestServer();
@@ -833,6 +861,55 @@ test("twilio webhook ignores out-of-order regression after delivered", async () 
     assert.equal(body.meta.applied, false);
     assert.equal(body.meta.ignoredReason, "delivered_terminal");
     assert.equal(body.data.deliveryStatus, "delivered");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api pending queue list returns durable pending entries", async () => {
+  const dbPath = setupTestDb("server-pending-queue-list");
+  const svc = await startTestServer();
+  try {
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_1",
+      followUpId: "fu_queue_pending_1"
+    });
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending?limit=10`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: Array<{ id: string; followUpId: string }>;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.length, 1);
+    assert.equal(body.data[0].id, "fu_queue_pending_1");
+    assert.equal(body.data[0].followUpId, "fu_queue_pending_1");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api pending queue show returns a single durable pending entry", async () => {
+  const dbPath = setupTestDb("server-pending-queue-show");
+  const svc = await startTestServer();
+  try {
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_2",
+      followUpId: "fu_queue_pending_2"
+    });
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/fu_queue_pending_2`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: { id: string; followUpId: string };
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.id, "fu_queue_pending_2");
+    assert.equal(body.data.followUpId, "fu_queue_pending_2");
   } finally {
     await svc.close();
     teardownTestDb(dbPath);
