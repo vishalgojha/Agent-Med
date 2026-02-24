@@ -916,6 +916,75 @@ test("api pending queue show returns a single durable pending entry", async () =
   }
 });
 
+test("api pending queue cancel requires confirm unless dry-run", async () => {
+  const dbPath = setupTestDb("server-pending-queue-cancel-confirm");
+  const svc = await startTestServer();
+  try {
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_cancel_1",
+      followUpId: "fu_queue_pending_cancel_1"
+    });
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/fu_queue_pending_cancel_1`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({})
+    });
+    assert.equal(res.status, 409);
+    const body = (await res.json()) as { ok: boolean; code?: string };
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "RISK_CONFIRMATION_REQUIRED");
+
+    const dryRunRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/fu_queue_pending_cancel_1`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dryRun: true })
+    });
+    assert.equal(dryRunRes.status, 200);
+    const dryRunBody = (await dryRunRes.json()) as {
+      ok: boolean;
+      data: { status: string; entry: { id: string } };
+    };
+    assert.equal(dryRunBody.ok, true);
+    assert.equal(dryRunBody.data.status, "dry_run");
+    assert.equal(dryRunBody.data.entry.id, "fu_queue_pending_cancel_1");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api pending queue cancel confirm removes queue item", async () => {
+  const dbPath = setupTestDb("server-pending-queue-cancel-confirm-send");
+  const svc = await startTestServer();
+  try {
+    writePendingQueueEntry({
+      dbPath,
+      queueId: "fu_queue_pending_cancel_2",
+      followUpId: "fu_queue_pending_cancel_2"
+    });
+    const cancelRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/fu_queue_pending_cancel_2`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: true })
+    });
+    assert.equal(cancelRes.status, 200);
+    const cancelBody = (await cancelRes.json()) as {
+      ok: boolean;
+      data: { status: string; entry: { id: string } };
+    };
+    assert.equal(cancelBody.ok, true);
+    assert.equal(cancelBody.data.status, "cancelled");
+    assert.equal(cancelBody.data.entry.id, "fu_queue_pending_cancel_2");
+
+    const showRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/pending/fu_queue_pending_cancel_2`);
+    assert.equal(showRes.status, 404);
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
 test("api failed queue list returns durable failed entries", async () => {
   const dbPath = setupTestDb("server-failed-queue-list");
   const svc = await startTestServer();

@@ -309,6 +309,26 @@ export async function getPendingDeliveryById(queueId: string): Promise<QueuedDel
   return await safeReadJson<QueuedDelivery>(resolveQueuedFilePath(queueId));
 }
 
+export async function removePendingDeliveryById(queueId: string): Promise<QueuedDelivery> {
+  const entry = await getPendingDeliveryById(queueId);
+  if (!entry) {
+    throw new Error("Pending delivery not found");
+  }
+  try {
+    await fs.promises.unlink(resolveQueuedFilePath(queueId));
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : "";
+    if (code === "ENOENT") {
+      throw new Error("Pending delivery not found");
+    }
+    throw error;
+  }
+  return entry;
+}
+
 export async function listFailedDeliveries(limit = 50): Promise<QueuedDelivery[]> {
   const queueDir = resolveQueueDir();
   const failedDir = resolveFailedDir(queueDir);

@@ -23,6 +23,7 @@ import {
   getFailedDeliveryById,
   listPendingDeliveries,
   listFailedDeliveries,
+  removePendingDeliveryById,
   requeueFailedDelivery,
   retryFailedDeliveryNow
 } from "./messaging/delivery-queue.js";
@@ -512,6 +513,61 @@ export async function runCli(argv = process.argv): Promise<void> {
         print({ ok: true, data: row });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (message === "invalid delivery queue id") {
+          print({ ok: false, code: "VALIDATION_ERROR", message });
+          return;
+        }
+        throw error;
+      }
+    });
+
+  program
+    .command("follow-up-queue-pending-cancel")
+    .description("cancel and remove a pending durable follow-up delivery queue item")
+    .requiredOption("--id <queueId>")
+    .option("--confirm")
+    .option("--dry-run")
+    .action(async (opts) => {
+      runMigrations();
+      try {
+        const queueId = String(opts.id);
+        if (Boolean(opts.dryRun)) {
+          const row = await getPendingDeliveryById(queueId);
+          if (!row) {
+            print({ ok: false, code: "NOT_FOUND", message: "Pending delivery not found" });
+            return;
+          }
+          print({
+            ok: true,
+            data: {
+              status: "dry_run",
+              entry: row
+            }
+          });
+          return;
+        }
+        if (!Boolean(opts.confirm)) {
+          print({
+            ok: false,
+            code: "RISK_CONFIRMATION_REQUIRED",
+            message: "Pending queue cancel requires --confirm"
+          });
+          return;
+        }
+        const row = await removePendingDeliveryById(queueId);
+        print({
+          ok: true,
+          data: {
+            status: "cancelled",
+            entry: row
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "Pending delivery not found") {
+          print({ ok: false, code: "NOT_FOUND", message });
+          return;
+        }
         if (message === "invalid delivery queue id") {
           print({ ok: false, code: "VALIDATION_ERROR", message });
           return;

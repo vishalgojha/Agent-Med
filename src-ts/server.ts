@@ -33,6 +33,7 @@ import {
   getFailedDeliveryById,
   listPendingDeliveries,
   listFailedDeliveries,
+  removePendingDeliveryById,
   recoverPendingDeliveries,
   requeueFailedDelivery,
   retryFailedDeliveryNow
@@ -726,6 +727,58 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
       sendJson(res, 200, { ok: true, data: row });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message === "invalid delivery queue id") {
+        sendJson(res, 422, appError("VALIDATION_ERROR", message));
+        return;
+      }
+      sendJson(res, 500, toStructuredError(error));
+    }
+  });
+  app.delete("/api/follow-up/queue/pending/:id", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const body = asObject(req.body) ?? {};
+      const dryRun = Boolean(body.dryRun);
+      const confirm = Boolean(body.confirm);
+      const row = await getPendingDeliveryById(req.params.id);
+      if (!row) {
+        sendJson(res, 404, appError("NOT_FOUND", "Pending delivery not found"));
+        return;
+      }
+      if (dryRun) {
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            status: "dry_run",
+            entry: row
+          }
+        });
+        return;
+      }
+      if (!confirm) {
+        sendJson(
+          res,
+          409,
+          appError("RISK_CONFIRMATION_REQUIRED", "Pending queue cancel requires confirm=true", {
+            requiredConfirmation: true
+          })
+        );
+        return;
+      }
+      const cancelled = await removePendingDeliveryById(req.params.id);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          status: "cancelled",
+          entry: cancelled
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "Pending delivery not found") {
+        sendJson(res, 404, appError("NOT_FOUND", message));
+        return;
+      }
       if (message === "invalid delivery queue id") {
         sendJson(res, 422, appError("VALIDATION_ERROR", message));
         return;
