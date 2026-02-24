@@ -12,6 +12,9 @@ export interface Config {
   apiTokenAdmin: string;
   twilioWebhookValidate: boolean;
   twilioWebhookAuthToken: string;
+  twilioWebhookMaxBodyBytes: number;
+  twilioWebhookBodyTimeoutMs: number;
+  twilioWebhookDedupeTtlMs: number;
   publicBaseUrl: string;
   apiRateLimitWindowMs: number;
   apiRateLimitMax: number;
@@ -40,6 +43,9 @@ export function readConfig(): Config {
     apiTokenAdmin: process.env.API_TOKEN_ADMIN ?? "",
     twilioWebhookValidate: String(process.env.TWILIO_WEBHOOK_VALIDATE ?? "false").toLowerCase() === "true",
     twilioWebhookAuthToken: process.env.TWILIO_WEBHOOK_AUTH_TOKEN ?? process.env.TWILIO_AUTH_TOKEN ?? "",
+    twilioWebhookMaxBodyBytes: Number(process.env.TWILIO_WEBHOOK_MAX_BODY_BYTES ?? 65536),
+    twilioWebhookBodyTimeoutMs: Number(process.env.TWILIO_WEBHOOK_BODY_TIMEOUT_MS ?? 10000),
+    twilioWebhookDedupeTtlMs: Number(process.env.TWILIO_WEBHOOK_DEDUPE_TTL_MS ?? 86400000),
     publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
     apiRateLimitWindowMs: Number(process.env.API_RATE_LIMIT_WINDOW_MS ?? 60000),
     apiRateLimitMax: Number(process.env.API_RATE_LIMIT_MAX ?? 120),
@@ -59,6 +65,15 @@ export function readConfig(): Config {
   }
   if (!Number.isFinite(cfg.apiRateLimitMax) || cfg.apiRateLimitMax <= 0) {
     throw new Error("API_RATE_LIMIT_MAX must be a positive number");
+  }
+  if (!Number.isFinite(cfg.twilioWebhookMaxBodyBytes) || cfg.twilioWebhookMaxBodyBytes <= 0) {
+    throw new Error("TWILIO_WEBHOOK_MAX_BODY_BYTES must be a positive number");
+  }
+  if (!Number.isFinite(cfg.twilioWebhookBodyTimeoutMs) || cfg.twilioWebhookBodyTimeoutMs <= 0) {
+    throw new Error("TWILIO_WEBHOOK_BODY_TIMEOUT_MS must be a positive number");
+  }
+  if (!Number.isFinite(cfg.twilioWebhookDedupeTtlMs) || cfg.twilioWebhookDedupeTtlMs <= 0) {
+    throw new Error("TWILIO_WEBHOOK_DEDUPE_TTL_MS must be a positive number");
   }
   if (!Number.isFinite(cfg.replayRetentionDays) || cfg.replayRetentionDays <= 0) {
     throw new Error("REPLAY_RETENTION_DAYS must be a positive number");

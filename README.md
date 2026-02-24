@@ -22,6 +22,7 @@ Configure `.env`:
 - `ANTHROPIC_API_KEY`, `AI_MODEL`
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
 - `TWILIO_WEBHOOK_VALIDATE`, `TWILIO_WEBHOOK_AUTH_TOKEN`, `PUBLIC_BASE_URL`
+- `TWILIO_WEBHOOK_MAX_BODY_BYTES`, `TWILIO_WEBHOOK_BODY_TIMEOUT_MS`, `TWILIO_WEBHOOK_DEDUPE_TTL_MS`
 - `PORT`, `DB_PATH`, `DRY_RUN`, `API_TOKEN`
 - `API_TOKEN_READ`, `API_TOKEN_WRITE`, `API_TOKEN_ADMIN`
 - `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX`
@@ -82,6 +83,10 @@ npm run start -- follow-up-dead-letter-requeue --id fdl_123
 npm run start -- follow-up-retry --id fu_123 --confirm --dry-run
 npm run start -- follow-up-retry-bulk --confirm --dry-run --limit 25
 npm run start -- follow-up-dispatch --confirm --dry-run
+npm run start -- follow-up-queue-failed-list --limit 50
+npm run start -- follow-up-queue-failed-requeue --id fu_123 --reset-retry-count
+npm run start -- follow-up-queue-failed-retry --id fu_123 --dry-run
+npm run start -- follow-up-queue-failed-retry --id fu_123 --confirm
 
 # Ops
 npm run start -- ops-metrics
@@ -112,6 +117,9 @@ Endpoints:
 - `POST /api/follow-up/:id/retry`
 - `POST /api/follow-up/retry-failed-bulk`
 - `POST /api/follow-up/dispatch`
+- `GET /api/follow-up/queue/failed`
+- `POST /api/follow-up/queue/failed/:id/requeue`
+- `POST /api/follow-up/queue/failed/:id/retry`
 - `GET /api/ops/metrics`
 - `POST /api/decide`
 - `POST /webhooks/twilio/status`
@@ -194,3 +202,5 @@ Tests use stub AI clients; no real model calls are made.
 - HIGH-risk actions require `--confirm` / `confirm: true`.
 - Follow-up idempotency is enforced by `(patient_id, trigger, scheduled_at)`.
 - Retries that exceed the max threshold are moved to dead-letter for manual triage.
+- Outbound follow-up sends use a durable on-disk queue with startup recovery.
+- Twilio webhook status callbacks are body-limited/time-bounded and persistently deduplicated.

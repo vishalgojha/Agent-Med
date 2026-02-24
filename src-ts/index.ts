@@ -18,6 +18,12 @@ import { addPatient, getPatientById, listFollowUpDeadLetters, listFollowUps, lis
 import { Specialty } from "./types.js";
 import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
+import {
+  getFailedDeliveryById,
+  listFailedDeliveries,
+  requeueFailedDelivery,
+  retryFailedDeliveryNow
+} from "./messaging/delivery-queue.js";
 
 function print(data: unknown): void {
   console.log(JSON.stringify(data, null, 2));
@@ -475,6 +481,98 @@ export async function runCli(argv = process.argv): Promise<void> {
       });
       const result = await executeIntent(intent, createCapabilityHandlers(deps), cliExecuteOptions());
       print(result.ok === false ? result : { ok: true, data: result.output });
+    });
+
+  program
+    .command("follow-up-queue-failed-list")
+    .description("list failed durable follow-up delivery queue items")
+    .option("--limit <limit>", "default 50", "50")
+    .action(async (opts) => {
+      runMigrations();
+      const limit = Number(opts.limit);
+      const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 50;
+      const rows = await listFailedDeliveries(safeLimit);
+      print({ ok: true, data: rows });
+    });
+
+  program
+    .command("follow-up-queue-failed-requeue")
+    .description("move a failed durable queue item back to pending queue")
+    .requiredOption("--id <queueId>")
+    .option("--reset-retry-count")
+    .action(async (opts) => {
+      runMigrations();
+      try {
+        const row = await requeueFailedDelivery({
+          queueId: String(opts.id),
+          resetRetryCount: Boolean(opts.resetRetryCount)
+        });
+        print({ ok: true, data: row });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "Failed delivery not found") {
+          print({ ok: false, code: "NOT_FOUND", message });
+          return;
+        }
+        if (message === "invalid delivery queue id") {
+          print({ ok: false, code: "VALIDATION_ERROR", message });
+          return;
+        }
+        throw error;
+      }
+    });
+
+  program
+    .command("follow-up-queue-failed-retry")
+    .description("retry a failed durable queue item immediately")
+    .requiredOption("--id <queueId>")
+    .option("--confirm")
+    .option("--dry-run")
+    .action(async (opts) => {
+      runMigrations();
+      try {
+        const queueId = String(opts.id);
+        if (Boolean(opts.dryRun)) {
+          const row = await getFailedDeliveryById(queueId);
+          if (!row) {
+            print({ ok: false, code: "NOT_FOUND", message: "Failed delivery not found" });
+            return;
+          }
+          print({
+            ok: true,
+            data: {
+              status: "dry_run",
+              entry: row
+            }
+          });
+          return;
+        }
+        if (!Boolean(opts.confirm)) {
+          print({
+            ok: false,
+            code: "RISK_CONFIRMATION_REQUIRED",
+            message: "Failed queue retry requires --confirm"
+          });
+          return;
+        }
+        const deps = createRuntimeDeps();
+        const result = await retryFailedDeliveryNow({
+          queueId,
+          messaging: deps.messaging
+        });
+        print({ ok: true, data: result });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === "Failed delivery not found") {
+          print({ ok: false, code: "NOT_FOUND", message });
+          return;
+        }
+        if (message === "invalid delivery queue id") {
+          print({ ok: false, code: "VALIDATION_ERROR", message });
+          return;
+        }
+        throw error;
+      }
     });
 
   program

@@ -3,6 +3,12 @@ import { AIClient } from "../ai/client.js";
 import { loadPrompt } from "../ai/prompts.js";
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
+import {
+  ackDelivery,
+  enqueueDelivery,
+  failDelivery,
+  getDeliveryQueueSnapshotSync
+} from "../messaging/delivery-queue.js";
 import { MessagingAdapter } from "../messaging/interface.js";
 import {
   getFollowUpDeadLetterById,
@@ -26,10 +32,24 @@ const outboundQueue = new PQueue({ concurrency: 1, interval: 1000, intervalCap: 
 const MAX_RETRY_COUNT = 5;
 const BACKOFF_MINUTES = [5, 15, 60, 240, 720];
 
-export function getFollowUpQueueStats(): { queued: number; pending: number } {
+export function getFollowUpQueueStats(): {
+  queued: number;
+  pending: number;
+  durableQueued: number;
+  durableFailed: number;
+  durableOldestPendingAt: string | null;
+  durableOldestPendingAgeMs: number | null;
+  durableError: string | null;
+} {
+  const durable = getDeliveryQueueSnapshotSync();
   return {
     queued: outboundQueue.size,
-    pending: outboundQueue.pending
+    pending: outboundQueue.pending,
+    durableQueued: durable.queued,
+    durableFailed: durable.failed,
+    durableOldestPendingAt: durable.oldestPendingAt,
+    durableOldestPendingAgeMs: durable.oldestPendingAgeMs,
+    durableError: durable.error
   };
 }
 
@@ -52,6 +72,61 @@ function enforceHipaaSafeBody(input: string): string {
     text = text.slice(0, 280);
   }
   return text.trim();
+}
+
+async function sendWithQueue(input: {
+  followUpId: string;
+  to: string;
+  body: string;
+  channel: "sms" | "whatsapp";
+  messaging: MessagingAdapter;
+}): Promise<{ id: string }> {
+  let queueId: string | null = null;
+  try {
+    queueId = await enqueueDelivery({
+      followUpId: input.followUpId,
+      to: input.to,
+      body: input.body,
+      channel: input.channel
+    });
+  } catch (error) {
+    logger.warn("follow-up.delivery_queue.enqueue_failed", {
+      followUpId: input.followUpId,
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  try {
+    const sendResult = await input.messaging.send({
+      to: input.to,
+      body: input.body,
+      channel: input.channel
+    });
+    if (queueId) {
+      await ackDelivery(queueId).catch((error: unknown) => {
+        logger.warn("follow-up.delivery_queue.ack_failed", {
+          followUpId: input.followUpId,
+          queueId,
+          message: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }
+    return sendResult;
+  } catch (error) {
+    if (queueId) {
+      await failDelivery(
+        queueId,
+        error instanceof Error ? error.message : String(error)
+      ).catch((failure: unknown) => {
+        logger.warn("follow-up.delivery_queue.fail_write_failed", {
+          followUpId: input.followUpId,
+          queueId,
+          message: failure instanceof Error ? failure.message : String(failure)
+        });
+      });
+    }
+    throw error;
+  }
 }
 
 export async function runFollowUp(input: {
@@ -141,16 +216,33 @@ export async function runFollowUp(input: {
   const when = new Date(scheduledAt).getTime() - Date.now();
   if (when <= 0) {
     await outboundQueue.add(async () => {
-      await input.messaging.send({ to: message.to, body: message.body, channel: message.channel });
-      message.sentAt = nowIso();
-      message.status = "sent";
-      markFollowUpSent(record.id, "sent", message.sentAt);
+      try {
+        await sendWithQueue({
+          followUpId: record.id,
+          to: message.to,
+          body: message.body,
+          channel: message.channel,
+          messaging: input.messaging
+        });
+        message.sentAt = nowIso();
+        message.status = "sent";
+        markFollowUpSent(record.id, "sent", message.sentAt);
+      } catch {
+        message.status = "failed";
+        markFollowUpSent(record.id, "failed", nowIso());
+      }
     });
   } else {
     setTimeout(() => {
       void outboundQueue.add(async () => {
         try {
-          const sendResult = await input.messaging.send({ to: message.to, body: message.body, channel: message.channel });
+          const sendResult = await sendWithQueue({
+            followUpId: record.id,
+            to: message.to,
+            body: message.body,
+            channel: message.channel,
+            messaging: input.messaging
+          });
           const sentAt = nowIso();
           markFollowUpSentWithProvider(record.id, sentAt, sendResult.id);
         } catch {
@@ -196,7 +288,13 @@ export async function retryFailedFollowUp(input: {
   }
 
   try {
-    const sendResult = await input.messaging.send({ to: message.to, body: message.body, channel: message.channel });
+    const sendResult = await sendWithQueue({
+      followUpId: record.id,
+      to: message.to,
+      body: message.body,
+      channel: message.channel,
+      messaging: input.messaging
+    });
     message.sentAt = nowIso();
     message.status = "sent";
     markFollowUpSentWithProvider(record.id, message.sentAt, sendResult.id);
@@ -260,7 +358,13 @@ export async function dispatchDueFollowUps(input: {
     }
 
     try {
-      const sendResult = await input.messaging.send({ to: patient.phone, body: row.body, channel: row.channel });
+      const sendResult = await sendWithQueue({
+        followUpId: row.id,
+        to: patient.phone,
+        body: row.body,
+        channel: row.channel,
+        messaging: input.messaging
+      });
       sent += 1;
       markFollowUpSentWithProvider(row.id, nowIso(), sendResult.id);
     } catch (error) {

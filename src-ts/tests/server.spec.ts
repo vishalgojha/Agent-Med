@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { AddressInfo } from "node:net";
 import { StubAIClient } from "../ai/client.js";
 import { resetConfigForTests } from "../config.js";
 import { addDoctor } from "../doctors/store.js";
+import { resolveDeliveryQueuePathForDbPath } from "../messaging/delivery-queue.js";
 import { StubMessagingAdapter } from "../messaging/stub.js";
 import { getDb } from "../db/client.js";
 import { addPatient, getFollowUpById, markFollowUpSent, saveFollowUp } from "../patients/store.js";
@@ -20,6 +23,9 @@ async function startTestServer(options?: {
   apiTokenAdmin?: string;
   rateLimitMax?: number;
   rateLimitWindowMs?: number;
+  twilioWebhookMaxBodyBytes?: number;
+  twilioWebhookBodyTimeoutMs?: number;
+  twilioWebhookDedupeTtlMs?: number;
 }) {
   if (options?.apiToken) {
     process.env.API_TOKEN = options.apiToken;
@@ -50,6 +56,21 @@ async function startTestServer(options?: {
     process.env.API_RATE_LIMIT_WINDOW_MS = String(options.rateLimitWindowMs);
   } else {
     delete process.env.API_RATE_LIMIT_WINDOW_MS;
+  }
+  if (options?.twilioWebhookMaxBodyBytes !== undefined) {
+    process.env.TWILIO_WEBHOOK_MAX_BODY_BYTES = String(options.twilioWebhookMaxBodyBytes);
+  } else {
+    delete process.env.TWILIO_WEBHOOK_MAX_BODY_BYTES;
+  }
+  if (options?.twilioWebhookBodyTimeoutMs !== undefined) {
+    process.env.TWILIO_WEBHOOK_BODY_TIMEOUT_MS = String(options.twilioWebhookBodyTimeoutMs);
+  } else {
+    delete process.env.TWILIO_WEBHOOK_BODY_TIMEOUT_MS;
+  }
+  if (options?.twilioWebhookDedupeTtlMs !== undefined) {
+    process.env.TWILIO_WEBHOOK_DEDUPE_TTL_MS = String(options.twilioWebhookDedupeTtlMs);
+  } else {
+    delete process.env.TWILIO_WEBHOOK_DEDUPE_TTL_MS;
   }
   resetConfigForTests();
 
@@ -84,6 +105,35 @@ async function startTestServer(options?: {
       });
     }
   };
+}
+
+function writeFailedQueueEntry(params: {
+  dbPath: string;
+  queueId: string;
+  followUpId: string;
+  to?: string;
+  body?: string;
+  channel?: "sms" | "whatsapp";
+  retryCount?: number;
+  lastError?: string;
+}): void {
+  const queueDir = resolveDeliveryQueuePathForDbPath(params.dbPath);
+  const failedDir = path.join(queueDir, "failed");
+  fs.mkdirSync(failedDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(failedDir, `${params.queueId}.json`),
+    JSON.stringify({
+      id: params.queueId,
+      followUpId: params.followUpId,
+      to: params.to ?? "+15550009999",
+      body: params.body ?? "Please call clinic.",
+      channel: params.channel ?? "sms",
+      enqueuedAt: Date.now(),
+      retryCount: params.retryCount ?? 3,
+      lastError: params.lastError ?? "provider timeout"
+    }),
+    "utf-8"
+  );
 }
 
 test("api validation blocks malformed request", async () => {
@@ -309,10 +359,38 @@ test("api ops metrics returns counts", async () => {
 
     const res = await fetch(`${svc.baseUrl}/api/ops/metrics`);
     assert.equal(res.status, 200);
-    const body = (await res.json()) as { ok: boolean; data: { doctors: number; patients: number } };
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: {
+        doctors: number;
+        patients: number;
+        queue: {
+          queued: number;
+          pending: number;
+          durableQueued: number;
+          durableFailed: number;
+          durableOldestPendingAt: string | null;
+          durableOldestPendingAgeMs: number | null;
+          durableError: string | null;
+        };
+      };
+    };
     assert.equal(body.ok, true);
     assert.equal(body.data.doctors, 1);
     assert.equal(body.data.patients, 1);
+    assert.equal(typeof body.data.queue.queued, "number");
+    assert.equal(typeof body.data.queue.pending, "number");
+    assert.equal(typeof body.data.queue.durableQueued, "number");
+    assert.equal(typeof body.data.queue.durableFailed, "number");
+    assert.equal(
+      body.data.queue.durableOldestPendingAt === null || typeof body.data.queue.durableOldestPendingAt === "string",
+      true
+    );
+    assert.equal(
+      body.data.queue.durableOldestPendingAgeMs === null || typeof body.data.queue.durableOldestPendingAgeMs === "number",
+      true
+    );
+    assert.equal(body.data.queue.durableError === null || typeof body.data.queue.durableError === "string", true);
   } finally {
     await svc.close();
     teardownTestDb(dbPath);
@@ -674,6 +752,50 @@ test("twilio webhook dedupes duplicate events", async () => {
   }
 });
 
+test("twilio webhook requires form-urlencoded content type", async () => {
+  const dbPath = setupTestDb("server-twilio-content-type");
+  const svc = await startTestServer();
+  try {
+    const res = await fetch(`${svc.baseUrl}/webhooks/twilio/status`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ MessageSid: "SM1", MessageStatus: "delivered" })
+    });
+    assert.equal(res.status, 415);
+    const body = (await res.json()) as { ok: boolean; code?: string };
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "VALIDATION_ERROR");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("twilio webhook enforces max body size", async () => {
+  const dbPath = setupTestDb("server-twilio-max-body");
+  const svc = await startTestServer({ twilioWebhookMaxBodyBytes: 32 });
+  try {
+    const hugeValue = "x".repeat(128);
+    const form = new URLSearchParams({
+      MessageSid: "SMBIG",
+      MessageStatus: "delivered",
+      ErrorMessage: hugeValue
+    });
+    const res = await fetch(`${svc.baseUrl}/webhooks/twilio/status`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: form.toString()
+    });
+    assert.equal(res.status, 413);
+    const body = (await res.json()) as { ok: boolean; code?: string };
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "VALIDATION_ERROR");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
 test("twilio webhook ignores out-of-order regression after delivered", async () => {
   const dbPath = setupTestDb("server-twilio-status-regression");
   const svc = await startTestServer();
@@ -711,6 +833,165 @@ test("twilio webhook ignores out-of-order regression after delivered", async () 
     assert.equal(body.meta.applied, false);
     assert.equal(body.meta.ignoredReason, "delivered_terminal");
     assert.equal(body.data.deliveryStatus, "delivered");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api failed queue list returns durable failed entries", async () => {
+  const dbPath = setupTestDb("server-failed-queue-list");
+  const svc = await startTestServer();
+  try {
+    writeFailedQueueEntry({
+      dbPath,
+      queueId: "fu_queue_failed_1",
+      followUpId: "fu_queue_failed_1"
+    });
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/queue/failed?limit=10`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: Array<{ id: string; followUpId: string }>;
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.length, 1);
+    assert.equal(body.data[0].id, "fu_queue_failed_1");
+    assert.equal(body.data[0].followUpId, "fu_queue_failed_1");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api failed queue requeue moves item back to pending queue", async () => {
+  const dbPath = setupTestDb("server-failed-queue-requeue");
+  const svc = await startTestServer();
+  try {
+    writeFailedQueueEntry({
+      dbPath,
+      queueId: "fu_queue_failed_2",
+      followUpId: "fu_queue_failed_2",
+      retryCount: 4
+    });
+    const requeueRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/failed/fu_queue_failed_2/requeue`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ resetRetryCount: true })
+    });
+    assert.equal(requeueRes.status, 200);
+    const requeueBody = (await requeueRes.json()) as {
+      ok: boolean;
+      data: { id: string; retryCount: number };
+    };
+    assert.equal(requeueBody.ok, true);
+    assert.equal(requeueBody.data.id, "fu_queue_failed_2");
+    assert.equal(requeueBody.data.retryCount, 0);
+
+    const metricsRes = await fetch(`${svc.baseUrl}/api/ops/metrics`);
+    assert.equal(metricsRes.status, 200);
+    const metricsBody = (await metricsRes.json()) as {
+      ok: boolean;
+      data: { queue: { durableQueued: number; durableFailed: number } };
+    };
+    assert.equal(metricsBody.ok, true);
+    assert.equal(metricsBody.data.queue.durableQueued, 1);
+    assert.equal(metricsBody.data.queue.durableFailed, 0);
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api failed queue retry requires confirm unless dry-run", async () => {
+  const dbPath = setupTestDb("server-failed-queue-retry-confirm");
+  const svc = await startTestServer();
+  try {
+    writeFailedQueueEntry({
+      dbPath,
+      queueId: "fu_queue_failed_3",
+      followUpId: "fu_queue_failed_3"
+    });
+    const res = await fetch(`${svc.baseUrl}/api/follow-up/queue/failed/fu_queue_failed_3/retry`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({})
+    });
+    assert.equal(res.status, 409);
+    const body = (await res.json()) as { ok: boolean; code?: string };
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "RISK_CONFIRMATION_REQUIRED");
+
+    const dryRunRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/failed/fu_queue_failed_3/retry`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dryRun: true })
+    });
+    assert.equal(dryRunRes.status, 200);
+    const dryRunBody = (await dryRunRes.json()) as {
+      ok: boolean;
+      data: { status: string; entry: { id: string } };
+    };
+    assert.equal(dryRunBody.ok, true);
+    assert.equal(dryRunBody.data.status, "dry_run");
+    assert.equal(dryRunBody.data.entry.id, "fu_queue_failed_3");
+  } finally {
+    await svc.close();
+    teardownTestDb(dbPath);
+  }
+});
+
+test("api failed queue retry confirm sends and clears failed queue item", async () => {
+  const dbPath = setupTestDb("server-failed-queue-retry-send");
+  const svc = await startTestServer();
+  try {
+    const doctor = addDoctor({ name: "Dr Queue Retry", specialty: "general" });
+    const patient = addPatient({
+      doctorId: doctor.id,
+      name: "Pat Queue Retry",
+      phone: "+15558880001"
+    });
+    const row = saveFollowUp({
+      patientId: patient.id,
+      doctorId: doctor.id,
+      trigger: "custom",
+      body: "Please call clinic.",
+      channel: "sms",
+      scheduledAt: new Date().toISOString()
+    });
+    markFollowUpSent(row.id, "failed", new Date().toISOString());
+    writeFailedQueueEntry({
+      dbPath,
+      queueId: row.id,
+      followUpId: row.id,
+      to: patient.phone
+    });
+
+    const retryRes = await fetch(`${svc.baseUrl}/api/follow-up/queue/failed/${encodeURIComponent(row.id)}/retry`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: true })
+    });
+    assert.equal(retryRes.status, 200);
+    const retryBody = (await retryRes.json()) as {
+      ok: boolean;
+      data: { status: string; providerMessageId?: string };
+    };
+    assert.equal(retryBody.ok, true);
+    assert.equal(retryBody.data.status, "sent");
+    assert.equal(typeof retryBody.data.providerMessageId, "string");
+
+    const updated = getFollowUpById(row.id);
+    assert.equal(updated?.status, "sent");
+    assert.equal(typeof updated?.providerMessageId, "string");
+
+    const metricsRes = await fetch(`${svc.baseUrl}/api/ops/metrics`);
+    const metricsBody = (await metricsRes.json()) as {
+      ok: boolean;
+      data: { queue: { durableFailed: number } };
+    };
+    assert.equal(metricsBody.ok, true);
+    assert.equal(metricsBody.data.queue.durableFailed, 0);
   } finally {
     await svc.close();
     teardownTestDb(dbPath);

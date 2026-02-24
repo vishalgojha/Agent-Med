@@ -3,6 +3,12 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import twilio from "twilio";
+import {
+  isRequestBodyLimitError,
+  parseUrlEncodedFormBody,
+  readRequestBodyWithLimit,
+  requestBodyErrorToText
+} from "./http/body-limit.js";
 import { runMigrations } from "./db/migrations.js";
 import { createIntent } from "./engine/intent.js";
 import { executeIntent } from "./engine/executor.js";
@@ -14,6 +20,7 @@ import { CapabilityName, RiskLevel } from "./types.js";
 import { getPriorAuthById, listPriorAuths } from "./capabilities/prior-auth.js";
 import {
   addPatient,
+  getFollowUpByProviderMessageId,
   getPatientById,
   listFollowUpDeadLetters,
   listFollowUps,
@@ -21,6 +28,14 @@ import {
   updateFollowUpDeliveryByProviderMessageId
 } from "./patients/store.js";
 import { logger } from "./logger.js";
+import {
+  getFailedDeliveryById,
+  listFailedDeliveries,
+  recoverPendingDeliveries,
+  requeueFailedDelivery,
+  retryFailedDeliveryNow
+} from "./messaging/delivery-queue.js";
+import { createPersistentDedupe, resolveTwilioWebhookDedupePath } from "./messaging/persistent-dedupe.js";
 import { getOpsMetrics } from "./ops/metrics.js";
 import { getFollowUpQueueStats } from "./capabilities/follow-up.js";
 import { getDb } from "./db/client.js";
@@ -75,6 +90,15 @@ function requireStringArray(body: Record<string, unknown>, field: string): strin
   if (!Array.isArray(value)) return null;
   const cleaned = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
   return cleaned.length === value.length ? cleaned : null;
+}
+
+function twilioWebhookDedupeKey(body: Record<string, string>): string {
+  return [
+    body.MessageSid ?? "",
+    body.MessageStatus ?? "",
+    body.ErrorCode ?? "",
+    body.ErrorMessage ?? ""
+  ].join("|");
 }
 
 function parseSpecialty(value: unknown): Specialty | null {
@@ -188,7 +212,6 @@ async function handleCapability(
 
 export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
   const app = express();
-  app.use(express.urlencoded({ extended: false }));
   app.use(express.json({ limit: "2mb" }));
 
   const {
@@ -198,10 +221,19 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     apiTokenAdmin,
     twilioWebhookValidate,
     twilioWebhookAuthToken,
+    twilioWebhookMaxBodyBytes,
+    twilioWebhookBodyTimeoutMs,
+    twilioWebhookDedupeTtlMs,
     publicBaseUrl,
     apiRateLimitWindowMs,
     apiRateLimitMax
   } = getConfig();
+  const webhookDedupe = createPersistentDedupe({
+    ttlMs: twilioWebhookDedupeTtlMs,
+    memoryMaxSize: 5_000,
+    fileMaxEntries: 50_000,
+    filePath: resolveTwilioWebhookDedupePath()
+  });
   const rateWindow = new Map<string, { count: number; resetAt: number }>();
   const scopeByToken = new Map<string, TokenScope>();
   if (apiTokenRead) scopeByToken.set(apiTokenRead, "read");
@@ -313,8 +345,20 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     }
   });
 
-  app.post("/webhooks/twilio/status", (req, res) => {
+  app.post("/webhooks/twilio/status", async (req, res) => {
     try {
+      const contentType = req.header("content-type") ?? "";
+      if (!contentType.toLowerCase().includes("application/x-www-form-urlencoded")) {
+        sendJson(res, 415, appError("VALIDATION_ERROR", "Content-Type must be application/x-www-form-urlencoded"));
+        return;
+      }
+
+      const rawBody = await readRequestBodyWithLimit(req, {
+        maxBytes: twilioWebhookMaxBodyBytes,
+        timeoutMs: twilioWebhookBodyTimeoutMs
+      });
+      const formBody = parseUrlEncodedFormBody(rawBody);
+
       if (twilioWebhookValidate) {
         const signature = req.header("x-twilio-signature");
         if (!signature) {
@@ -330,7 +374,7 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
           twilioWebhookAuthToken,
           signature,
           callbackUrl,
-          (req.body ?? {}) as Record<string, string>
+          formBody
         );
         if (!valid) {
           sendJson(res, 403, appError("FORBIDDEN", "Invalid Twilio signature"));
@@ -338,13 +382,8 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
         }
       }
 
-      const body = asObject(req.body);
-      if (!body) {
-        sendJson(res, 400, appError("VALIDATION_ERROR", "Request body must be an object"));
-        return;
-      }
-      const messageSid = requireString(body, "MessageSid");
-      const providerStatusRaw = requireString(body, "MessageStatus");
+      const messageSid = requireString(formBody, "MessageSid");
+      const providerStatusRaw = requireString(formBody, "MessageStatus");
       if (!messageSid || !providerStatusRaw) {
         sendJson(res, 422, appError("VALIDATION_ERROR", "MessageSid and MessageStatus are required"));
         return;
@@ -356,12 +395,27 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
         return;
       }
 
+      const accepted = await webhookDedupe.checkAndRecord(twilioWebhookDedupeKey(formBody));
+      if (!accepted) {
+        const existing = getFollowUpByProviderMessageId(messageSid);
+        sendJson(res, 200, {
+          ok: true,
+          data: existing,
+          meta: {
+            deduped: true,
+            applied: false,
+            ignoredReason: "persistent_duplicate"
+          }
+        });
+        return;
+      }
+
       const updated = updateFollowUpDeliveryByProviderMessageId({
         providerMessageId: messageSid,
         providerStatus: normalizedStatus as "queued" | "sent" | "delivered" | "undelivered" | "failed",
-        errorCode: typeof body.ErrorCode === "string" ? body.ErrorCode : undefined,
-        errorMessage: typeof body.ErrorMessage === "string" ? body.ErrorMessage : undefined,
-        payload: JSON.stringify(body),
+        errorCode: formBody.ErrorCode,
+        errorMessage: formBody.ErrorMessage,
+        payload: JSON.stringify(formBody),
         at: nowIso()
       });
       if (!updated.record) {
@@ -379,6 +433,16 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
         }
       });
     } catch (error) {
+      if (isRequestBodyLimitError(error)) {
+        const status =
+          error.code === "PAYLOAD_TOO_LARGE"
+            ? 413
+            : error.code === "REQUEST_BODY_TIMEOUT"
+              ? 408
+              : 400;
+        sendJson(res, status, appError("VALIDATION_ERROR", requestBodyErrorToText(error.code)));
+        return;
+      }
       sendJson(res, 500, toStructuredError(error));
     }
   });
@@ -638,6 +702,90 @@ export function createServer(deps: RuntimeDeps = createRuntimeDeps()) {
     sendJson(res, 200, { ok: true, data: result.output });
   });
 
+  app.get("/api/follow-up/queue/failed", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const limit = Number(req.query.limit ?? 50);
+      const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 50;
+      const entries = await listFailedDeliveries(safeLimit);
+      sendJson(res, 200, { ok: true, data: entries });
+    } catch (error) {
+      sendJson(res, 500, toStructuredError(error));
+    }
+  });
+  app.post("/api/follow-up/queue/failed/:id/requeue", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const body = asObject(req.body) ?? {};
+      const resetRetryCount = Boolean(body.resetRetryCount);
+      const row = await requeueFailedDelivery({
+        queueId: req.params.id,
+        resetRetryCount
+      });
+      sendJson(res, 200, { ok: true, data: row });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "Failed delivery not found") {
+        sendJson(res, 404, appError("NOT_FOUND", message));
+        return;
+      }
+      if (message === "invalid delivery queue id") {
+        sendJson(res, 422, appError("VALIDATION_ERROR", message));
+        return;
+      }
+      sendJson(res, 500, toStructuredError(error));
+    }
+  });
+  app.post("/api/follow-up/queue/failed/:id/retry", async (req, res) => {
+    if (!requireScope(req, res, "admin")) return;
+    try {
+      const body = asObject(req.body) ?? {};
+      const dryRun = Boolean(body.dryRun);
+      const confirm = Boolean(body.confirm);
+      const row = await getFailedDeliveryById(req.params.id);
+      if (!row) {
+        sendJson(res, 404, appError("NOT_FOUND", "Failed delivery not found"));
+        return;
+      }
+      if (dryRun) {
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            status: "dry_run",
+            entry: row
+          }
+        });
+        return;
+      }
+      if (!confirm) {
+        sendJson(
+          res,
+          409,
+          appError("RISK_CONFIRMATION_REQUIRED", "Failed queue retry requires confirm=true", {
+            requiredConfirmation: true
+          })
+        );
+        return;
+      }
+      const retryResult = await retryFailedDeliveryNow({
+        queueId: req.params.id,
+        messaging: deps.messaging
+      });
+      sendJson(res, 200, { ok: true, data: retryResult });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "Failed delivery not found") {
+        sendJson(res, 404, appError("NOT_FOUND", message));
+        return;
+      }
+      if (message === "invalid delivery queue id") {
+        sendJson(res, 422, appError("VALIDATION_ERROR", message));
+        return;
+      }
+      sendJson(res, 500, toStructuredError(error));
+    }
+  });
+
   app.get("/api/replay", (_req, res) => {
     if (!requireScope(_req, res, "read")) return;
     sendJson(res, 200, { ok: true, data: listReplay() });
@@ -709,6 +857,21 @@ export function startServer(port?: number): void {
   app.listen(listenPort, () => {
     console.log(JSON.stringify({ ok: true, message: `doctor-agent listening on ${listenPort}` }));
   });
+
+  void recoverPendingDeliveries({
+    messaging: deps.messaging,
+    dryRun: cfg.dryRun
+  })
+    .then((summary) => {
+      if (summary.recovered > 0 || summary.failed > 0 || summary.skipped > 0) {
+        logger.info("follow-up.delivery_queue.recovered", summary);
+      }
+    })
+    .catch((error: unknown) => {
+      logger.error("follow-up.delivery_queue.recovery_failed", {
+        message: error instanceof Error ? error.message : String(error)
+      });
+    });
 
   setInterval(() => {
     const dispatchIntent = createIntent({

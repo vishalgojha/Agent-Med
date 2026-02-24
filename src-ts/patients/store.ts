@@ -420,6 +420,14 @@ export function getFollowUpById(id: string): FollowUpRecord | null {
   return row ? mapFollowUp(row) : null;
 }
 
+export function getFollowUpByProviderMessageId(providerMessageId: string): FollowUpRecord | null {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT * FROM follow_ups WHERE provider_message_id = ?")
+    .get(providerMessageId) as FollowUpRow | undefined;
+  return row ? mapFollowUp(row) : null;
+}
+
 export function listFollowUps(filters?: {
   patientId?: string;
   status?: "scheduled" | "sent" | "failed" | "dead_letter";
