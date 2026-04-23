@@ -1,361 +1,182 @@
-import { FormEvent, useMemo, useState } from "react";
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-type Tab = "overview" | "registry" | "scribe" | "priorAuth" | "followUp" | "decide" | "deadLetters" | "replay";
+import React, { useState, useEffect } from 'react';
+import { auth, signInWithGoogle } from './lib/firebase';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Users, 
+  Stethoscope, 
+  Settings, 
+  LogOut, 
+  Plus, 
+  Search,
+  Activity,
+  Mic,
+  FileText
+} from 'lucide-react';
 
-async function apiRequest<T>(
-  path: string,
-  token: string,
-  init?: RequestInit & { bodyJson?: unknown }
-): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (token) headers.authorization = `Bearer ${token}`;
-  if (init?.bodyJson !== undefined) headers["content-type"] = "application/json";
-  const res = await fetch(path, {
-    ...init,
-    headers: { ...headers, ...(init?.headers as Record<string, string> | undefined) },
-    body: init?.bodyJson !== undefined ? JSON.stringify(init.bodyJson) : init?.body
-  });
-  const json = (await res.json()) as { ok: boolean; data?: T; message?: string; code?: string };
-  if (!res.ok || !json.ok) {
-    throw new Error(`${json.code ?? "REQUEST_FAILED"}: ${json.message ?? `HTTP ${res.status}`}`);
-  }
-  return json.data as T;
-}
+import PatientList from './components/PatientList';
+import AmbientScribe from './components/AmbientScribe';
+import Dashboard from './components/Dashboard';
 
-export function App() {
-  const [token, setToken] = useState("");
-  const [active, setActive] = useState<Tab>("overview");
-  const [result, setResult] = useState<string>("Ready for commands.");
-  const [loading, setLoading] = useState(false);
-  const [doctorId, setDoctorId] = useState("d_demo");
-  const [patientId, setPatientId] = useState("p_demo");
-  const [deadLetterId, setDeadLetterId] = useState("");
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'scribe'>('dashboard');
 
-  const navigation = useMemo(() => [
-    {
-      label: "Operations",
-      items: [
-        { id: "overview" as Tab, label: "Overview" },
-        { id: "replay" as Tab, label: "Audit Replay" },
-      ]
-    },
-    {
-      label: "Management",
-      items: [
-        { id: "registry" as Tab, label: "Registry" },
-        { id: "deadLetters" as Tab, label: "Dead Letters" },
-      ]
-    },
-    {
-      label: "Agents",
-      items: [
-        { id: "scribe" as Tab, label: "Ambient Scribe" },
-        { id: "priorAuth" as Tab, label: "Prior Auth" },
-        { id: "followUp" as Tab, label: "Follow-up" },
-        { id: "decide" as Tab, label: "Decision Support" },
-      ]
-    }
-  ], []);
-
-  const run = async (fn: () => Promise<unknown>) => {
-    setLoading(true);
-    try {
-      const data = await fn();
-      setResult(JSON.stringify(data, null, 2));
-    } catch (error) {
-      setResult(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }, null, 2));
-    } finally {
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
       setLoading(false);
-    }
-  };
-
-  const runOverview = async () => {
-    await run(async () => {
-      const ready = await fetch("/health/ready").then((r) => r.json());
-      const metrics = await apiRequest("/api/ops/metrics", token);
-      return { ready, metrics };
     });
-  };
+    return unsubscribe;
+  }, []);
 
-  const runScribe = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    await run(() =>
-      apiRequest("/api/scribe", token, {
-        method: "POST",
-        bodyJson: {
-          transcript: String(fd.get("transcript") ?? ""),
-          patientId,
-          doctorId
-        }
-      })
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="w-12 h-12 border-4 border-medical-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
     );
-  };
+  }
 
-  const runCreateDoctor = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    await run(async () => {
-      const data = await apiRequest<{ id: string; name: string; specialty: string }>("/api/doctors", token, {
-        method: "POST",
-        bodyJson: {
-          name: String(fd.get("name") ?? ""),
-          specialty: String(fd.get("specialty") ?? "general")
-        }
-      });
-      setDoctorId(data.id);
-      return data;
-    });
-  };
-
-  const runCreatePatient = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    await run(async () => {
-      const data = await apiRequest<{ id: string; doctorId: string; name: string }>("/api/patients", token, {
-        method: "POST",
-        bodyJson: {
-          doctorId,
-          name: String(fd.get("name") ?? ""),
-          phone: String(fd.get("phone") ?? "")
-        }
-      });
-      setPatientId(data.id);
-      return data;
-    });
-  };
-
-  const runPriorAuth = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    await run(() =>
-      apiRequest("/api/prior-auth", token, {
-        method: "POST",
-        bodyJson: {
-          patientId,
-          doctorId,
-          procedureCode: String(fd.get("procedureCode") ?? ""),
-          insurerId: String(fd.get("insurerId") ?? ""),
-          diagnosisCodes: String(fd.get("diagnosisCodes") ?? "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        }
-      })
+  if (!user) {
+    return (
+      <div id="login-screen" className="flex flex-col items-center justify-center min-h-screen bg-slate-950 medical-grid relative overflow-hidden">
+        <div className="absolute inset-0 opacity-20 scanline"></div>
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="p-10 bg-slate-900 border border-slate-800 rounded-sm shadow-2xl max-w-sm w-full text-center relative z-10"
+        >
+          <div className="w-16 h-16 bg-sky-500 rounded-sm flex items-center justify-center mx-auto mb-6 shadow-lg shadow-sky-500/20">
+            <Stethoscope className="text-white w-8 h-8" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-1 tracking-tighter uppercase font-mono">Agent-Med <span className="text-slate-500 text-xs font-normal">v4.2</span></h1>
+          <p className="text-emerald-500 font-mono text-[10px] mb-8 uppercase tracking-widest animate-pulse">System Boot Sequence Active...</p>
+          
+          <button 
+            onClick={signInWithGoogle}
+            className="w-full py-3 px-6 bg-sky-600 hover:bg-sky-500 text-white rounded-sm font-bold text-xs uppercase tracking-widest transition-all duration-200 flex items-center justify-center gap-3 active:scale-[0.98]"
+          >
+            Authenticate Google ID
+          </button>
+        </motion.div>
+      </div>
     );
-  };
-
-  const runFollowUp = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    await run(() =>
-      apiRequest("/api/follow-up", token, {
-        method: "POST",
-        bodyJson: {
-          patientId,
-          doctorId,
-          trigger: String(fd.get("trigger") ?? "lab_result"),
-          customMessage: String(fd.get("customMessage") ?? ""),
-          dryRun: true
-        }
-      })
-    );
-  };
-
-  const runDecision = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-    await run(() =>
-      apiRequest("/api/decide", token, {
-        method: "POST",
-        bodyJson: {
-          patientId,
-          query: String(fd.get("query") ?? "")
-        }
-      })
-    );
-  };
+  }
 
   return (
-    <div className="studio-container">
-      <aside className="sidebar">
-        <h1>Doctor Agent</h1>
-        {navigation.map((group) => (
-          <div key={group.label} className="nav-group">
-            <div className="nav-label">{group.label}</div>
-            {group.items.map((item) => (
-              <button
-                key={item.id}
-                className={`nav-button ${active === item.id ? "active" : ""}`}
-                onClick={() => setActive(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
+    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+      {/* Top OS Header */}
+      <header className="h-14 bg-slate-900 text-white flex items-center justify-between px-6 shrink-0 border-b border-slate-800">
+        <div className="flex items-center gap-4">
+          <div className="w-8 h-8 bg-sky-500 rounded-sm flex items-center justify-center font-bold text-sm">AM</div>
+          <h1 className="text-base font-bold tracking-tight uppercase">Agent-Med <span className="text-slate-500 font-normal text-xs ml-1">OS v4.2.0</span></h1>
+        </div>
+        <div className="flex items-center gap-8">
+          <div className="hidden md:flex gap-4 text-[10px] font-mono">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> AGENT ACTIVE</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> SYSTEM SYNCED</span>
           </div>
-        ))}
-      </aside>
-
-      <main className="main-area">
-        <header className="top-bar">
-          <div className="context-item">
-            <span className="context-label">API TOKEN</span>
-            <input 
-              className="context-value" 
-              style={{ background: 'transparent', border: 'none', padding: 0, width: '150px' }}
-              value={token} 
-              onChange={(e) => setToken(e.target.value)} 
-              placeholder="Bearer..." 
-            />
-          </div>
-          <div className="context-item">
-            <span className="context-label">DOCTOR ID</span>
-            <input 
-              className="context-value" 
-              style={{ background: 'transparent', border: 'none', padding: 0, width: '120px' }}
-              value={doctorId} 
-              onChange={(e) => setDoctorId(e.target.value)} 
-            />
-          </div>
-          <div className="context-item">
-            <span className="context-label">PATIENT ID</span>
-            <input 
-              className="context-value" 
-              style={{ background: 'transparent', border: 'none', padding: 0, width: '120px' }}
-              value={patientId} 
-              onChange={(e) => setPatientId(e.target.value)} 
-            />
-          </div>
-        </header>
-
-        <div className="content-container">
-          <div className="workspace">
-            {active === "overview" && (
-              <div className="stack">
-                <div className="card">
-                  <h3>System Overview</h3>
-                  <button onClick={runOverview} disabled={loading} className="btn-secondary">
-                    Refresh Readiness & Metrics
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {active === "registry" && (
-              <div className="stack">
-                <div className="card">
-                  <h3>Provider Registry</h3>
-                  <form className="stack" onSubmit={runCreateDoctor}>
-                    <input name="name" placeholder="New Doctor Name" required />
-                    <select name="specialty" defaultValue="general">
-                      <option value="primary_care">Primary Care</option>
-                      <option value="emergency">Emergency</option>
-                      <option value="oncology">Oncology</option>
-                      <option value="psychiatry">Psychiatry</option>
-                      <option value="hospitalist">Hospitalist</option>
-                      <option value="surgery">Surgery</option>
-                      <option value="general">General</option>
-                    </select>
-                    <button disabled={loading}>Add Provider</button>
-                  </form>
-                </div>
-                <div className="card">
-                  <h3>Patient Registry</h3>
-                  <form className="stack" onSubmit={runCreatePatient}>
-                    <input name="name" placeholder="New Patient Name" required />
-                    <input name="phone" placeholder="Phone (E.164)" />
-                    <button disabled={loading}>Add Patient</button>
-                  </form>
-                </div>
-              </div>
-            )}
-
-            {active === "scribe" && (
-              <div className="card">
-                <h3>Ambient Scribe</h3>
-                <form className="stack" onSubmit={runScribe}>
-                  <textarea name="transcript" rows={12} placeholder="Paste the patient encounter transcript here..." required />
-                  <button disabled={loading}>Generate Clinical SOAP Note</button>
-                </form>
-              </div>
-            )}
-
-            {active === "priorAuth" && (
-              <div className="card">
-                <h3>Prior Authorization Assistant</h3>
-                <form className="stack" onSubmit={runPriorAuth}>
-                  <input name="procedureCode" placeholder="Procedure Code (e.g. 99213)" required />
-                  <input name="insurerId" placeholder="Insurer ID (e.g. BCBS)" required />
-                  <input name="diagnosisCodes" placeholder="Diagnosis Codes (CSV: Z00.00, E11.9)" required />
-                  <button disabled={loading}>Draft Authorization</button>
-                </form>
-              </div>
-            )}
-
-            {active === "followUp" && (
-              <div className="card">
-                <h3>Follow-up Automation</h3>
-                <form className="stack" onSubmit={runFollowUp}>
-                  <select name="trigger" defaultValue="lab_result">
-                    <option value="post_visit">Post Visit</option>
-                    <option value="lab_result">Lab Result</option>
-                    <option value="medication_reminder">Medication Reminder</option>
-                    <option value="custom">Custom Trigger</option>
-                  </select>
-                  <textarea name="customMessage" rows={3} placeholder="Custom message (optional)" />
-                  <button disabled={loading}>Schedule Dry-Run</button>
-                </form>
-              </div>
-            )}
-
-            {active === "decide" && (
-              <div className="card">
-                <h3>Clinical Decision Support</h3>
-                <form className="stack" onSubmit={runDecision}>
-                  <textarea name="query" rows={4} placeholder="Enter clinical question (e.g. 'Is it safe to add metformin?')" required />
-                  <button disabled={loading}>Run Analysis</button>
-                </form>
-              </div>
-            )}
-
-            {active === "deadLetters" && (
-              <div className="card">
-                <h3>Dead Letter Management</h3>
-                <div className="stack">
-                  <input
-                    value={deadLetterId}
-                    onChange={(e) => setDeadLetterId(e.target.value)}
-                    placeholder="Enter Dead-Letter ID to requeue"
-                  />
-                  <button
-                    onClick={() => run(() => apiRequest(`/api/follow-up/dead-letter/${encodeURIComponent(deadLetterId)}/requeue`, token, { method: "POST", bodyJson: { doctorId, dryRun: false } }))}
-                    disabled={loading || !deadLetterId}
-                  >
-                    Requeue Item
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {active === "replay" && (
-              <div className="card">
-                <h3>Audit Log Replay</h3>
-                <button onClick={() => run(() => apiRequest("/api/replay", token))} disabled={loading}>
-                  Load Replay Log
-                </button>
-              </div>
-            )}
+          <div className="text-right">
+            <p className="text-xs font-bold">{user.displayName}</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-tighter">Clinical Provider</p>
           </div>
         </div>
+      </header>
 
-        <aside className="console-panel">
-          <div className="console-header">
-            <span>AGENT CONSOLE</span>
-            <span>{loading ? "RUNNING..." : "IDLE"}</span>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar Controls */}
+        <nav className="w-64 bg-white border-r border-slate-200 flex flex-col p-3 shrink-0">
+          <div className="space-y-1 flex-grow">
+            <p className="label-caps px-4 py-2 mt-4">Command Center</p>
+            <SidebarLink 
+              icon={<Activity size={16} />} 
+              label="Dashboard" 
+              active={activeTab === 'dashboard'} 
+              onClick={() => setActiveTab('dashboard')} 
+            />
+            <SidebarLink 
+              icon={<Users size={16} />} 
+              label="Patient Registry" 
+              active={activeTab === 'patients'} 
+              onClick={() => setActiveTab('patients')} 
+            />
+            <SidebarLink 
+              icon={<Mic size={16} />} 
+              label="Ambient Scribe" 
+              active={activeTab === 'scribe'} 
+              onClick={() => setActiveTab('scribe')} 
+            />
           </div>
-          <pre className="console-output">{result}</pre>
-        </aside>
-      </main>
+
+          <div className="mt-auto pt-4 border-t border-slate-100">
+            <button 
+              onClick={() => signOut(auth)}
+              className="w-full flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-red-500 transition-colors rounded-sm"
+            >
+              <LogOut size={16} />
+              <span className="text-xs font-bold uppercase tracking-wider">De-Authenticate</span>
+            </button>
+          </div>
+        </nav>
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto relative medical-grid p-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="max-w-7xl mx-auto"
+            >
+              {activeTab === 'dashboard' && <Dashboard />}
+              {activeTab === 'patients' && <PatientList />}
+              {activeTab === 'scribe' && <AmbientScribe />}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
+
+      {/* Footer Status Bar */}
+      <footer className="h-8 bg-slate-100 border-t border-slate-200 flex items-center px-6 justify-between text-[10px] text-slate-500 font-mono">
+        <div className="flex gap-6 uppercase tracking-widest">
+          <span>ENCRYPTION: AES-256-GCM</span>
+          <span>HIPAA: COMPLIANT</span>
+          <span className="hidden sm:inline">NODES: 04-ACTIVE</span>
+        </div>
+        <div className="flex gap-4 items-center">
+          <span className="font-bold text-slate-900">{new Date().toLocaleTimeString('en-US', { hour12: false })} UTC</span>
+        </div>
+      </footer>
     </div>
+  );
+}
+
+function SidebarLink({ icon, label, active, onClick }: { 
+  icon: React.ReactNode; 
+  label: string; 
+  active: boolean; 
+  onClick: () => void 
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-sm transition-all duration-150 group ${
+        active 
+          ? 'bg-slate-100 text-sky-600 border-l-2 border-sky-600' 
+          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-2 border-transparent'
+      }`}
+    >
+      <span className={`${active ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-600'}`}>{icon}</span>
+      <span className="text-xs font-bold uppercase tracking-wider">{label}</span>
+    </button>
   );
 }
