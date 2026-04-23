@@ -5,6 +5,7 @@ import { runMigrations } from "../db/migrations.js";
 import { resetConfigForTests } from "../config.js";
 import { resolveDeliveryQueuePathForDbPath } from "../messaging/delivery-queue.js";
 import { resolveTwilioWebhookDedupePathForDbPath } from "../messaging/persistent-dedupe.js";
+import { resetRateLimiter } from "../http/middleware/rate-limiter.js";
 
 export function setupTestDb(name: string): string {
   closeDb();
@@ -24,6 +25,7 @@ export function setupTestDb(name: string): string {
   process.env.DB_PATH = dbPath;
   process.env.DRY_RUN = "true";
   resetConfigForTests();
+  resetRateLimiter();
   runMigrations();
   return dbPath;
 }

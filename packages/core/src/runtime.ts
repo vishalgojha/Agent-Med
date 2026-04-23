@@ -21,14 +21,16 @@ export interface RuntimeDeps {
   messaging: MessagingAdapter;
 }
 
-export function createRuntimeDeps(): RuntimeDeps {
+export function createRuntimeDeps(overrides?: Partial<RuntimeDeps>): RuntimeDeps {
   const cfg = getConfig();
-  const aiClient = createAIClient();
-  const messaging = cfg.twilioAccountSid && cfg.twilioAuthToken && cfg.twilioFromNumber
-    ? new TwilioMessagingAdapter()
-    : new StubMessagingAdapter();
+  const defaults: RuntimeDeps = {
+    aiClient: createAIClient(),
+    messaging: cfg.twilioAccountSid && cfg.twilioAuthToken && cfg.twilioFromNumber
+      ? new TwilioMessagingAdapter()
+      : new StubMessagingAdapter()
+  };
 
-  return { aiClient, messaging };
+  return { ...defaults, ...overrides };
 }
 
 export function createCapabilityHandlers(deps: RuntimeDeps): Record<CapabilityName, (intent: Intent) => Promise<unknown>> {

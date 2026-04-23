@@ -49,7 +49,9 @@ export async function runDecisionSupport(input: {
     schema
   );
 
-  const sorted = alerts.sort((a, b) => {
+  const arrayAlerts = Array.isArray(alerts) ? alerts : [];
+
+  const sorted = arrayAlerts.sort((a, b) => {
     const rank = (severity?: string): number => {
       if (severity === "critical") return 0;
       if (severity === "warn") return 1;
@@ -58,6 +60,6 @@ export async function runDecisionSupport(input: {
     return rank(a.severity) - rank(b.severity);
   });
 
-  sorted.push({ type: "disclaimer", message: DISCLAIMER });
+  sorted.push({ type: "disclaimer", message: DISCLAIMER } as any);
   return sorted;
 }

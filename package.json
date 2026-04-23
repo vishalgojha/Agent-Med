@@ -1,42 +1,20 @@
 {
-  "name": "doctor-agent",
-  "version": "0.1.0",
+  "name": "doctor-agent-monorepo",
   "private": true,
-  "type": "module",
-  "bin": {
-    "doctor": "./bin/doctor.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:all": "npm run build && npm run ui:build",
-    "typecheck": "tsc --noEmit",
-    "test": "tsx --test src-ts/tests/*.spec.ts",
-    "start": "tsx src-ts/index.ts",
-    "serve": "tsx src-ts/index.ts serve",
-    "init": "tsx src-ts/index.ts init",
-    "ui:install": "npm --prefix ui install",
-    "ui:dev": "npm --prefix ui run dev",
-    "ui:build": "npm --prefix ui run build",
-    "ui:preview": "npm --prefix ui run preview",
-    "prepare": "npm run build"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.56.0",
-    "better-sqlite3": "^12.4.1",
-    "commander": "^14.0.1",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "p-queue": "^8.1.0",
-    "twilio": "^5.10.3"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/express": "^5.0.3",
-    "@types/node": "^24.10.1",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "build": "npm run build --workspaces",
+    "build:all": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspace=@doctor-agent/core",
+    "start": "npm run start --workspace=@doctor-agent/core",
+    "serve": "npm run serve --workspace=@doctor-agent/core",
+    "init": "npm run init --workspace=@doctor-agent/core",
+    "ui:install": "npm install --prefix packages/ui",
+    "ui:dev": "npm run dev --workspace=@doctor-agent/ui",
+    "ui:build": "npm run build --workspace=@doctor-agent/ui",
+    "ui:preview": "npm run preview --workspace=@doctor-agent/ui"
   }
 }

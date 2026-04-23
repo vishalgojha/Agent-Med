@@ -10,9 +10,9 @@
     "declaration": false,
     "sourceMap": false,
     "outDir": "dist",
-    "rootDir": "src-ts",
+    "rootDir": "src",
     "types": ["node"]
   },
-  "include": ["src-ts/**/*.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }

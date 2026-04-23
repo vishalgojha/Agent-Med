@@ -1,5 +1,5 @@
 {
-  "name": "doctor-agent-ui",
+  "name": "@doctor-agent/ui",
   "version": "0.1.0",
   "private": true,
   "type": "module",

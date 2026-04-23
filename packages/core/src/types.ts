@@ -11,6 +11,8 @@ export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export type CapabilityName = "scribe" | "prior_auth" | "follow_up" | "decision_support";
 
+export type TokenScope = "read" | "write" | "admin";
+
 export interface Intent {
   id: string;
   capability: CapabilityName;
