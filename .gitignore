@@ -5,3 +5,6 @@ dist/
 data/*.db
 ui/node_modules/
 ui/dist/
+**/firebase-applet-config.json
+**/firebase-*-config.json
+*.local.json
