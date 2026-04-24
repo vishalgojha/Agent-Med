@@ -165,6 +165,40 @@ export function registerFollowUpRoutes(router: Router, deps: RuntimeDeps) {
     }
   });
 
+  router.post("/:id/retry", async (req, res) => {
+    if (!requireScope(req, res, "write")) return;
+    const body = asObject(req.body) ?? {};
+    const followUpId = req.params.id;
+    try {
+      const intent = createIntent({
+        capability: "follow_up",
+        doctorId: String(body.doctorId ?? "d_api"),
+        payload: {
+          mode: "retry_failed",
+          followUpId
+        },
+        risk: "HIGH",
+        dryRun: Boolean(body.dryRun)
+      });
+      const result = await executeIntent(intent, createCapabilityHandlers(deps), {
+        confirm: Boolean(body.confirm),
+        requestId: String(req.headers["x-request-id"] ?? ""),
+        actorId: String(req.headers["x-actor-id"] ?? "system")
+      });
+      if (result.ok === false) {
+        sendJson(res, result.blocked ? 409 : 400, result);
+        return;
+      }
+      sendJson(res, 200, { ok: true, data: result.output });
+    } catch (err: any) {
+      if (err.message?.includes("not found")) {
+        sendJson(res, 404, { ok: false, code: "NOT_FOUND", message: err.message });
+        return;
+      }
+      sendJson(res, 500, { ok: false, code: "INTERNAL_ERROR", message: err.message });
+    }
+  });
+
   router.post("/dispatch", async (req, res) => {
     if (!requireScope(req, res, "write")) return;
     const body = asObject(req.body) ?? {};

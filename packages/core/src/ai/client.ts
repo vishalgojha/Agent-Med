@@ -54,6 +54,9 @@ export class StubAIClient implements AIClient {
 export function createAIClient(): AIClient {
   const cfg = getConfig();
   if (!cfg.anthropicApiKey) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("ANTHROPIC_API_KEY is required in production");
+    }
     return new StubAIClient(() => JSON.stringify({ message: "AI key missing" }));
   }
   return new AnthropicClient(cfg.anthropicApiKey, cfg.aiModel);

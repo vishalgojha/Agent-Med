@@ -29,6 +29,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
   const anyTokenConfigured = apiToken !== "" || apiTokenRead !== "" || apiTokenWrite !== "" || apiTokenAdmin !== "";
 
   if (!anyTokenConfigured) {
+    if (process.env.NODE_ENV === "production") {
+      sendJson(res, 401, appError("UNAUTHORIZED", "API token required in production"));
+      return;
+    }
     res.locals.authScope = "admin";
     return next();
   }

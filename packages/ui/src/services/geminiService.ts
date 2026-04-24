@@ -2,6 +2,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
+const MODEL = "gemini-2.0-flash-lite";
+
 export interface EncounterAnalysis {
   summary: string;
   diagnoses: string[];
@@ -21,7 +23,7 @@ export const analyzeEncounter = async (transcript: string): Promise<EncounterAna
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: MODEL,
     contents: prompt,
     config: {
       responseMimeType: "application/json",
@@ -56,7 +58,7 @@ export const refineTranscription = async (rawTranscript: string): Promise<string
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: MODEL,
     contents: prompt
   });
 
