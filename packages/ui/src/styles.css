@@ -1,27 +1,24 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-@layer components {
-  .panel {
-    @apply bg-white border border-slate-200 rounded-sm shadow-sm;
-  }
-  .label-caps {
-    @apply text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block;
-  }
-  .data-mono {
-    @apply font-mono text-[12px] leading-tight;
-  }
-  .vital-badge {
-    @apply border-l-4 border-sky-500 bg-sky-50/50 p-3;
-  }
-  .terminal-log {
-    @apply bg-slate-950 text-emerald-400 font-mono text-[12px] p-4 rounded-sm border border-slate-800;
-  }
+@utility panel {
+  @apply bg-white border border-slate-200 rounded-sm shadow-sm;
+}
+@utility label-caps {
+  @apply text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block;
+}
+@utility data-mono {
+  @apply font-mono text-[12px] leading-tight;
+}
+@utility vital-badge {
+  @apply border-l-4 border-sky-500 bg-sky-50/50 p-3;
+}
+@utility terminal-log {
+  @apply bg-slate-950 text-emerald-400 font-mono text-[12px] p-4 rounded-sm border border-slate-800;
 }
 
 .medical-grid {

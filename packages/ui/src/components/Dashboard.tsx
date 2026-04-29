@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Users, FileText, Activity, Clock } from 'lucide-react';
 
@@ -7,6 +7,15 @@ interface Patient {
   name: string;
   dob: string;
   gender: string;
+}
+
+interface Encounter {
+  id: string;
+  patientId: string;
+  transcript: string;
+  summary: string;
+  aiAnalysis: string;
+  createdAt: string;
 }
 
 function loadPatients(): Patient[] {
@@ -18,12 +27,37 @@ function loadPatients(): Patient[] {
   }
 }
 
+function loadEncounters(): Encounter[] {
+  try {
+    const raw = localStorage.getItem('agent-med-encounters');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function Dashboard() {
-  const patients = loadPatients();
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [encounters, setEncounters] = useState<Encounter[]>([]);
+
+  useEffect(() => {
+    setPatients(loadPatients());
+    setEncounters(loadEncounters());
+  }, []);
+
+  const today = new Date().toDateString();
+  const todayEncounters = encounters.filter(
+    (e) => new Date(e.createdAt).toDateString() === today
+  );
+
+  const getPatientName = (patientId: string) => {
+    const p = patients.find((p) => p.id === patientId);
+    return p ? p.name : 'Unknown';
+  };
 
   const stats = [
     { label: 'Active Patients', value: patients.length, icon: <Users className="text-blue-600" />, trend: 'local storage' },
-    { label: 'Encounters Today', value: '4', icon: <FileText className="text-emerald-600" />, trend: '2 remaining' },
+    { label: 'Encounters Today', value: todayEncounters.length, icon: <FileText className="text-emerald-600" />, trend: `${encounters.length - todayEncounters.length} historical` },
     { label: 'Avg Voice Scribe', value: '98%', icon: <Activity className="text-amber-600" />, trend: 'Accuracy rate' },
   ];
 
@@ -111,14 +145,26 @@ export default function Dashboard() {
         <div className="lg:col-span-4 flex flex-col gap-4">
           <section className="panel p-4 terminal-log flex-1">
             <div className="flex justify-between mb-4 pb-2 border-b border-slate-800">
-              <span className="label-caps text-slate-600 italic">Neural Log</span>
-              <span className="text-[9px] uppercase">Node: H100</span>
+              <span className="label-caps text-slate-600 italic">Encounter Log</span>
+              <span className="text-[9px] uppercase">{encounters.length} total</span>
             </div>
-            <div className="space-y-1 text-[11px] font-mono leading-tight">
-              <p><span className="text-slate-600">[08:42:01]</span> <span className="text-sky-400">BOOT:</span> Agent-Med Engine v4.2</p>
-              <p><span className="text-slate-600">[08:42:05]</span> <span className="text-sky-400">SYNC:</span> Clinical database active</p>
-              <p><span className="text-slate-600">[08:42:08]</span> <span className="text-emerald-500">READY:</span> Monitoring ambient inputs...</p>
-              <p className="animate-pulse">_</p>
+            <div className="space-y-1 text-[11px] font-mono leading-tight max-h-[200px] overflow-y-auto">
+              {encounters.length > 0 ? (
+                [...encounters].reverse().slice(0, 8).map((enc) => (
+                  <p key={enc.id}>
+                    <span className="text-slate-600">[{new Date(enc.createdAt).toLocaleTimeString([], { hour12: false })}]</span>{' '}
+                    <span className="text-emerald-500">ENC:</span>{' '}
+                    <span className="text-slate-400">{getPatientName(enc.patientId)}</span>{' '}
+                    <span className="text-slate-600">— {enc.summary.slice(0, 60)}{enc.summary.length > 60 ? '...' : ''}</span>
+                  </p>
+                ))
+              ) : (
+                <>
+                  <p><span className="text-slate-600">[System]</span> <span className="text-sky-400">BOOT:</span> Agent-Med Engine v4.2</p>
+                  <p><span className="text-slate-600">[System]</span> <span className="text-emerald-500">READY:</span> No encounters recorded yet</p>
+                  <p className="animate-pulse">_</p>
+                </>
+              )}
             </div>
           </section>
 

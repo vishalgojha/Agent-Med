@@ -1,8 +1,11 @@
-import { GoogleGenAI, Type } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+import { type GoogleGenAI, Type } from "@google/genai";
 
 const MODEL = "gemini-2.0-flash-lite";
+
+async function getAi() {
+  const { GoogleGenAI } = await import("@google/genai");
+  return new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || '' });
+}
 
 export interface EncounterAnalysis {
   summary: string;
@@ -11,6 +14,9 @@ export interface EncounterAnalysis {
 }
 
 export const analyzeEncounter = async (transcript: string): Promise<EncounterAnalysis> => {
+  const ai = await getAi();
+  if (!ai) throw new Error("Gemini API key not configured. Set VITE_GEMINI_API_KEY in .env");
+
   const prompt = `
     You are a medical AI assistant. Analyze the following transcript of a doctor-patient encounter.
     Extract:
@@ -48,6 +54,9 @@ export const analyzeEncounter = async (transcript: string): Promise<EncounterAna
 };
 
 export const refineTranscription = async (rawTranscript: string): Promise<string> => {
+  const ai = await getAi();
+  if (!ai) throw new Error("Gemini API key not configured. Set VITE_GEMINI_API_KEY in .env");
+
   const prompt = `
     You are a professional medical scribe. The following text is a raw voice-to-text transcription of a clinical encounter. 
     Refine the text to be grammatically correct and professional, while maintaining all medical facts and clinical nuances.
