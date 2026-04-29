@@ -16,17 +16,45 @@ import {
   Search,
   Activity,
   Mic,
-  FileText
+  FileText,
+  Database,
+  Wrench,
+  MessageSquare,
+  Monitor,
+  Shield
 } from 'lucide-react';
 
 import PatientList from './components/PatientList';
 import AmbientScribe from './components/AmbientScribe';
 import Dashboard from './components/Dashboard';
+import FhirExplorer from './components/FhirExplorer';
+import ClinicalTools from './components/ClinicalTools';
+import A2aAgentChat from './components/A2aAgentChat';
+import SystemStatus from './components/SystemStatus';
+import { FhirConfig } from './services/apiClient';
+import { MCP_URL, A2A_URL, CORE_URL } from './services/apiClient';
+
+type Tab = 'dashboard' | 'patients' | 'scribe' | 'fhir' | 'tools' | 'a2a' | 'status' | 'settings';
+
+interface FhirSettings {
+  serverUrl: string;
+  accessToken: string;
+  patientId: string;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'scribe'>('dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [fhirSettings, setFhirSettings] = useState<FhirSettings>(() => {
+    try {
+      const stored = localStorage.getItem('fhir-settings');
+      return stored ? JSON.parse(stored) : { serverUrl: '', accessToken: '', patientId: '' };
+    } catch {
+      return { serverUrl: '', accessToken: '', patientId: '' };
+    }
+  });
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -35,6 +63,19 @@ export default function App() {
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('fhir-settings', JSON.stringify(fhirSettings));
+  }, [fhirSettings]);
+
+  const fhirConfig: FhirConfig | null = fhirSettings.serverUrl
+    ? { serverUrl: fhirSettings.serverUrl, accessToken: fhirSettings.accessToken, patientId: fhirSettings.patientId }
+    : null;
 
   if (loading) {
     return (
@@ -113,6 +154,38 @@ export default function App() {
               active={activeTab === 'scribe'} 
               onClick={() => setActiveTab('scribe')} 
             />
+            <p className="label-caps px-4 py-2 mt-6">Integrations</p>
+            <SidebarLink 
+              icon={<Database size={16} />} 
+              label="FHIR Explorer" 
+              active={activeTab === 'fhir'} 
+              onClick={() => setActiveTab('fhir')} 
+            />
+            <SidebarLink 
+              icon={<Wrench size={16} />} 
+              label="Clinical Tools" 
+              active={activeTab === 'tools'} 
+              onClick={() => setActiveTab('tools')} 
+            />
+            <SidebarLink 
+              icon={<MessageSquare size={16} />} 
+              label="A2A Agent" 
+              active={activeTab === 'a2a'} 
+              onClick={() => setActiveTab('a2a')} 
+            />
+            <p className="label-caps px-4 py-2 mt-6">System</p>
+            <SidebarLink 
+              icon={<Monitor size={16} />} 
+              label="Status" 
+              active={activeTab === 'status'} 
+              onClick={() => setActiveTab('status')} 
+            />
+            <SidebarLink 
+              icon={<Shield size={16} />} 
+              label="Settings" 
+              active={activeTab === 'settings'} 
+              onClick={() => setActiveTab('settings')} 
+            />
           </div>
 
           <div className="mt-auto pt-4 border-t border-slate-100">
@@ -140,6 +213,11 @@ export default function App() {
               {activeTab === 'dashboard' && <Dashboard />}
               {activeTab === 'patients' && <PatientList />}
               {activeTab === 'scribe' && <AmbientScribe />}
+              {activeTab === 'fhir' && <FhirExplorer fhirConfig={fhirConfig} />}
+              {activeTab === 'tools' && <ClinicalTools fhirConfig={fhirConfig} />}
+              {activeTab === 'a2a' && <A2aAgentChat fhirConfig={fhirConfig} />}
+              {activeTab === 'status' && <SystemStatus />}
+              {activeTab === 'settings' && <FhirSettingsPage settings={fhirSettings} onSave={setFhirSettings} />}
             </motion.div>
           </AnimatePresence>
         </main>
@@ -153,9 +231,91 @@ export default function App() {
           <span className="hidden sm:inline">NODES: 04-ACTIVE</span>
         </div>
         <div className="flex gap-4 items-center">
-          <span className="font-bold text-slate-900">{new Date().toLocaleTimeString('en-US', { hour12: false })} UTC</span>
+          <span className="font-bold text-slate-900">{currentTime.toLocaleTimeString('en-US', { hour12: false })} UTC</span>
         </div>
       </footer>
+    </div>
+  );
+}
+
+function FhirSettingsPage({ settings, onSave }: { settings: FhirSettings; onSave: (s: FhirSettings) => void }) {
+  const [form, setForm] = useState(settings);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    onSave(form);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900 uppercase tracking-tight">Settings</h1>
+        <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">FHIR Server & SHARP Context Configuration</p>
+      </div>
+
+      <div className="panel p-6 space-y-4">
+        <h2 className="label-caps">FHIR Connection</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Server URL</label>
+            <input
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-sm outline-none focus:border-sky-500 font-mono text-xs"
+              placeholder="https://fhir.example.com/r4"
+              value={form.serverUrl}
+              onChange={(e) => setForm({ ...form, serverUrl: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Access Token</label>
+            <input
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-sm outline-none focus:border-sky-500 font-mono text-xs"
+              placeholder="Bearer token for FHIR authentication"
+              value={form.accessToken}
+              onChange={(e) => setForm({ ...form, accessToken: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Default Patient ID</label>
+            <input
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-sm outline-none focus:border-sky-500 font-mono text-xs"
+              placeholder="FHIR Patient resource ID"
+              value={form.patientId}
+              onChange={(e) => setForm({ ...form, patientId: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="pt-4 flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            className="px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-sm font-bold text-xs uppercase tracking-widest transition-all"
+          >
+            {saved ? 'Saved!' : 'Save Configuration'}
+          </button>
+          {saved && <span className="text-[10px] font-mono text-emerald-600">Settings persisted to localStorage</span>}
+        </div>
+      </div>
+
+      <div className="panel p-6 space-y-3">
+        <h2 className="label-caps">Environment Variables</h2>
+        <p className="text-[10px] text-slate-400">Configure these in your <code className="bg-slate-100 px-1 rounded">.env</code> file for the UI package:</p>
+        <div className="space-y-2 font-mono text-xs">
+          <div className="flex justify-between p-2 bg-slate-50 rounded-sm">
+            <span className="text-slate-600">VITE_CORE_URL</span>
+            <span className="text-slate-400">{CORE_URL}</span>
+          </div>
+          <div className="flex justify-between p-2 bg-slate-50 rounded-sm">
+            <span className="text-slate-600">VITE_MCP_URL</span>
+            <span className="text-slate-400">{MCP_URL}</span>
+          </div>
+          <div className="flex justify-between p-2 bg-slate-50 rounded-sm">
+            <span className="text-slate-600">VITE_A2A_URL</span>
+            <span className="text-slate-400">{A2A_URL}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
