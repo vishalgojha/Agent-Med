@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { addDoctor, addPatient } from "../doctors/store.js";
+import { addDoctor } from "../doctors/store.js";
 import { addPatient as addPatientStore } from "../patients/store.js";
 import { parseSpecialty, print } from "../utils.js";
 import { runMigrations } from "../db/migrations.js";

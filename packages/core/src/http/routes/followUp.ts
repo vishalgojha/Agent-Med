@@ -28,7 +28,7 @@ export function registerFollowUpRoutes(router: Router, deps: RuntimeDeps) {
     if (!requireScope(req, res, "read")) return;
     const patientId = typeof req.query.patientId === "string" ? req.query.patientId : undefined;
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
-    const validStatus = ["scheduled", "sent", "failed", "dead_letter"].includes(status!) ? status : undefined;
+    const validStatus = (status && ["scheduled", "sent", "failed", "dead_letter"].includes(status)) ? status as "scheduled" | "sent" | "failed" | "dead_letter" : undefined;
     sendJson(res, 200, { ok: true, data: listFollowUps({ patientId, status: validStatus }) });
   });
 

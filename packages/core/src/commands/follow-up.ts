@@ -12,10 +12,9 @@ import {
   listFailedDeliveries,
   getFailedDeliveryById,
   requeueFailedDelivery,
-  retryFailedDeliveryNow,
-  listFollowUps,
-  listFollowUpDeadLetters
+  retryFailedDeliveryNow
 } from "../messaging/delivery-queue.js";
+import { listFollowUps, listFollowUpDeadLetters } from "../patients/store.js";
 import { listPriorAuths } from "../capabilities/prior-auth.js";
 import { listPatients } from "../patients/store.js";
 import { addPatient } from "../patients/store.js";

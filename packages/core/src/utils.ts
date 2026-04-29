@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Specialty } from "../types.js";
+import { Specialty } from "./types.js";
 import { Response } from "express";
 
 export function nowIso(): string {

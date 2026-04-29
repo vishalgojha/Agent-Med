@@ -1,11 +1,10 @@
 import { Request, Response } from "express";
-import { createIntent } from "../../engine/intent.js";
-import { executeIntent } from "../../engine/executor.js";
-import { appError, toStructuredError } from "../../errors.js";
-import { createCapabilityHandlers, createRuntimeDeps, RuntimeDeps } from "../../runtime.js";
-import { CapabilityName, RiskLevel } from "../../types.js";
-import { asObject, requireString, requireStringArray } from "../../utils.js";
-import { sendJson } from "../../utils.js";
+import { createIntent } from "../engine/intent.js";
+import { executeIntent } from "../engine/executor.js";
+import { appError, toStructuredError } from "../errors.js";
+import { createCapabilityHandlers, createRuntimeDeps, RuntimeDeps } from "../runtime.js";
+import { CapabilityName, RiskLevel } from "../types.js";
+import { asObject, requireString, requireStringArray, sendJson } from "../utils.js";
 
 function riskForRequest(capability: CapabilityName, body: Record<string, unknown>): RiskLevel {
   if (capability === "prior_auth" && body.submit === true) return "HIGH";
