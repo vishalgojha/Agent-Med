@@ -1,5 +1,5 @@
 {
-  "name": "doctor-agent-monorepo",
+  "name": "agent-med-monorepo",
   "private": true,
   "workspaces": [
     "packages/*"
@@ -8,17 +8,17 @@
     "build": "npm run build --workspaces",
     "build:all": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
-    "test": "npm run test --workspace=@doctor-agent/core",
-    "start": "npm run start --workspace=@doctor-agent/core",
-    "serve": "npm run serve --workspace=@doctor-agent/core",
-    "init": "npm run init --workspace=@doctor-agent/core",
+    "test": "npm run test --workspace=@agent-med/core",
+    "start": "npm run start --workspace=@agent-med/core",
+    "serve": "npm run serve --workspace=@agent-med/core",
+    "init": "npm run init --workspace=@agent-med/core",
     "ui:install": "npm install --prefix packages/ui",
-    "ui:dev": "npm run dev --workspace=@doctor-agent/ui",
-    "ui:build": "npm run build --workspace=@doctor-agent/ui",
-    "ui:preview": "npm run preview --workspace=@doctor-agent/ui",
-    "mcp:serve": "npm run start --workspace=@doctor-agent/mcp-server",
-    "mcp:dev": "npm run dev --workspace=@doctor-agent/mcp-server",
-    "a2a:serve": "npm run start --workspace=@doctor-agent/a2a-agent",
-    "a2a:dev": "npm run dev --workspace=@doctor-agent/a2a-agent"
+    "ui:dev": "npm run dev --workspace=@agent-med/ui",
+    "ui:build": "npm run build --workspace=@agent-med/ui",
+    "ui:preview": "npm run preview --workspace=@agent-med/ui",
+    "mcp:serve": "npm run start --workspace=@agent-med/mcp-server",
+    "mcp:dev": "npm run dev --workspace=@agent-med/mcp-server",
+    "a2a:serve": "npm run start --workspace=@agent-med/a2a-agent",
+    "a2a:dev": "npm run dev --workspace=@agent-med/a2a-agent"
   }
 }

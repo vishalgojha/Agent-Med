@@ -79,7 +79,7 @@ async function runHealth(): Promise<void> {
 
 export async function runCli(argv = process.argv): Promise<void> {
   const program = new Command();
-  program.name("doctor").description("doctor-agent CLI").version("0.1.0");
+  program.name("agent-med").description("Agent-Med CLI").version("0.1.0");
 
   program
     .command("init")

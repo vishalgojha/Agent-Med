@@ -1,10 +1,10 @@
 {
-  "name": "@doctor-agent/core",
+  "name": "@agent-med/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "doctor": "./bin/doctor.js"
+    "agent-med": "./bin/agent-med.js"
   },
   "engines": {
     "node": ">=18"

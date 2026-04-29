@@ -53,7 +53,7 @@ export function readConfig(): Config {
     replayRetentionIntervalMs: Number(process.env.REPLAY_RETENTION_INTERVAL_MS ?? 3600000),
     port: Number(process.env.PORT ?? 3001),
     nodeEnv: process.env.NODE_ENV ?? "development",
-    dbPath: process.env.DB_PATH ?? "./data/doctor-agent.db",
+    dbPath: process.env.DB_PATH ?? "./data/agent-med.db",
     dryRun: String(process.env.DRY_RUN ?? "false").toLowerCase() === "true"
   };
 

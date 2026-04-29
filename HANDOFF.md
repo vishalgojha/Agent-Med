@@ -1,8 +1,8 @@
-# Handoff - doctor-agent
+# Handoff - Agent-Med
 
 Date: 2026-02-24
 Branch: `main`
-Repo: `https://github.com/vishalgojha/doctor-agent.git`
+Repo: `https://github.com/vishalgojha/Agent-Med.git`
 
 ## Scope Completed
 

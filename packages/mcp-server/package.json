@@ -1,5 +1,5 @@
 {
-  "name": "@doctor-agent/mcp-server",
+  "name": "@agent-med/mcp-server",
   "version": "0.2.0",
   "type": "module",
   "main": "./dist/index.js",

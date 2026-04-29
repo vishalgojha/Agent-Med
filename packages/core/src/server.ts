@@ -98,6 +98,6 @@ export function startServer(port?: number): void {
   const listenPort = port ?? cfg.port;
 
   app.listen(listenPort, () => {
-    console.log(JSON.stringify({ ok: true, message: `doctor-agent listening on ${listenPort}` }));
+    console.log(JSON.stringify({ ok: true, message: `Agent-Med listening on ${listenPort}` }));
   });
 }
