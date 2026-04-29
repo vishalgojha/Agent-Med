@@ -1,200 +1,113 @@
-import { Server } from "@modelcontextprotocol/server";
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import express, { Request, Response } from "express";
+import cors from "cors";
 import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/server/types";
+  registerGetPatient,
+  registerGetPatientSummary,
+  registerGetMedications,
+  registerGetConditions,
+  registerGetObservations,
+  registerGetEncounters,
+  registerScribe,
+  registerPriorAuth,
+  registerFollowUp,
+  registerDecision,
+} from "./tools/index.js";
+import { SHARP_EXTENSION_URI } from "./fhir-context.js";
 
-interface SharpContext {
-  serverUrl?: string;
-  accessToken?: string;
-  patientId?: string;
-}
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-const sharpContext: SharpContext = {};
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({
+    status: "ok",
+    server: "agent-med-mcp",
+    version: "0.2.0",
+    transport: "streamable-http",
+    fhirContextRequired: true,
+  });
+});
 
-const tools = [
-  {
-    name: "scribe",
-    description: "Create a SOAP note from a doctor-patient transcript",
-    inputSchema: {
-      type: "object",
-      properties: {
-        transcript: { type: "string", description: "The transcript of the encounter" },
-        patientId: { type: "string", description: "Patient ID" },
-        doctorId: { type: "string", description: "Doctor ID" },
+app.get("/.well-known/mcp-server.json", (_req: Request, res: Response) => {
+  res.json({
+    name: "Agent-Med MCP Server",
+    version: "0.2.0",
+    description: "Healthcare AI MCP server with FHIR integration (SHARP-on-MCP compliant)",
+    capabilities: {
+      tools: {
+        fhir: ["get_patient", "get_patient_summary", "get_medications", "get_conditions", "get_observations", "get_encounters"],
+        clinical: ["scribe", "prior_auth", "follow_up", "clinical_decision"],
       },
-      required: ["transcript", "patientId", "doctorId"],
+      fhir_context_required: true,
     },
-  },
-  {
-    name: "prior-auth",
-    description: "Create or manage prior authorization requests",
-    inputSchema: {
-      type: "object",
-      properties: {
-        action: { type: "string", enum: ["create", "status", "update"] },
-        patientId: { type: "string", description: "Patient ID" },
-        procedureCode: { type: "string", description: "CPT procedure code" },
-        diagnosisCodes: { type: "array", items: { type: "string" }, description: "ICD diagnosis codes" },
-        insurerId: { type: "string", description: "Insurer ID" },
-        status: { type: "string", description: "Status update" },
+    extensions: {
+      [SHARP_EXTENSION_URI]: {
+        description: "SHARP-on-MCP FHIR context propagation",
+        requiredHeaders: ["x-fhir-server-url", "x-fhir-access-token"],
+        optionalHeaders: ["x-patient-id"],
       },
-      required: ["action", "patientId"],
     },
-  },
-  {
-    name: "follow-up",
-    description: "Schedule or manage follow-up communications",
-    inputSchema: {
-      type: "object",
-      properties: {
-        action: { type: "string", enum: ["schedule", "retry", "dispatch"] },
-        patientId: { type: "string", description: "Patient ID" },
-        body: { type: "string", description: "Message body" },
-        channel: { type: "string", enum: ["sms", "whatsapp"] },
-        followUpId: { type: "string", description: "Follow-up ID for retry" },
-        confirm: { type: "boolean", description: "Confirmation flag" },
-        dryRun: { type: "boolean", description: "Dry run mode" },
-      },
-      required: ["action", "patientId"],
+    endpoints: {
+      streamableHttp: `${process.env.MCP_SERVER_URL || "http://localhost:3002"}/mcp`,
     },
-  },
-  {
-    name: "decision",
-    description: "Get clinical decision support alerts",
-    inputSchema: {
-      type: "object",
-      properties: {
-        patientId: { type: "string", description: "Patient ID" },
-        medications: { type: "array", items: { type: "string" }, description: "Current medications" },
-        conditions: { type: "array", items: { type: "string" }, description: "Current conditions" },
-      },
-      required: ["patientId"],
-    },
-  },
-];
+  });
+});
 
-export class MCPServer {
-  private server: Server;
-
-  constructor() {
-    this.server = new Server(
+app.post("/mcp", async (req: Request, res: Response) => {
+  try {
+    const server = new McpServer(
       {
-        name: "doctor-agent-mcp",
-        version: "0.1.0",
+        name: "agent-med-mcp",
+        version: "0.2.0",
       },
       {
         capabilities: {
           tools: {},
         },
+        instructions: "Agent-Med MCP Server: FHIR-integrated healthcare tools using SHARP-on-MCP. Requires x-fhir-server-url and x-fhir-access-token HTTP headers for FHIR resource access.",
       }
     );
 
-    this.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools }));
+    registerGetPatient(server);
+    registerGetPatientSummary(server);
+    registerGetMedications(server);
+    registerGetConditions(server);
+    registerGetObservations(server);
+    registerGetEncounters(server);
+    registerScribe(server);
+    registerPriorAuth(server);
+    registerFollowUp(server);
+    registerDecision(server);
 
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
-      return this.handleToolCall(name, args);
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
     });
-  }
 
-  private extractSharpHeaders(): Record<string, string> {
-    return {
-      serverUrl: sharpContext.serverUrl ?? "",
-      accessToken: sharpContext.accessToken ?? "",
-      patientId: sharpContext.patientId ?? "",
-    };
-  }
+    res.on("close", () => {
+      transport.close();
+      server.close();
+    });
 
-  async handleToolCall(
-    name: string,
-    args: Record<string, unknown>
-  ): Promise<{ content: Array<{ type: string; text: string }> } {
-    const headers = this.extractSharpHeaders();
-
-    try {
-      switch (name) {
-        case "scribe": {
-          const response = await this.callCoreApi("/api/scribe", "POST", {
-            transcript: args.transcript,
-            patientId: args.patientId,
-            doctorId: args.doctorId,
-            ...headers,
-          });
-          return [{ type: "text", text: JSON.stringify(response) }];
-        }
-        case "prior-auth": {
-          const response = await this.callCoreApi(
-            args.action === "create" ? "/api/prior-auth" : `/api/prior-auth/${args.id || ""}`,
-            args.action === "create" ? "POST" : "PATCH",
-            { ...args, ...headers }
-          );
-          return [{ type: "text", text: JSON.stringify(response) }];
-        }
-        case "follow-up": {
-          let path = "/api/follow-up";
-          let method = "POST";
-          if (args.action === "retry" && args.followUpId) {
-            path = `/api/follow-up/${args.followUpId}/retry`;
-          } else if (args.action === "dispatch") {
-            path = "/api/follow-up/dispatch";
-          }
-          const response = await this.callCoreApi(path, method, {
-            ...args,
-            confirm: args.confirm ?? false,
-            dryRun: args.dryRun ?? false,
-            ...headers,
-          });
-          return [{ type: "text", text: JSON.stringify(response) }];
-        }
-        case "decision": {
-          const response = await this.callCoreApi("/api/decide", "POST", {
-            patientId: args.patientId,
-            medications: args.medications ?? [],
-            conditions: args.conditions ?? [],
-            ...headers,
-          });
-          return [{ type: "text", text: JSON.stringify(response) }];
-        }
-        default:
-          throw new Error(`Unknown tool: ${name}`);
-      }
-    } catch (error) {
-      return [
-        {
-          type: "text",
-          text: JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-        },
-      ];
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("MCP request error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "Internal server error" },
+        id: null,
+      });
     }
   }
+});
 
-  private async callCoreApi(
-    path: string,
-    method: string,
-    body: Record<string, unknown>
-  ): Promise<unknown> {
-    const baseUrl = process.env.CORE_API_URL || "http://localhost:3000";
-    const response = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.API_TOKEN || ""}`,
-      },
-      body: method !== "GET" ? JSON.stringify(body) : undefined,
-    });
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
-    }
-    return response.json();
-  }
-
-  async start(): Promise<void> {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-  }
-}
-
-const server = new MCPServer();
-server.start().catch(console.error);
+const PORT = Number(process.env.PORT || 3002);
+app.listen(PORT, () => {
+  console.log(`Agent-Med MCP Server listening on port ${PORT}`);
+  console.log(`MCP endpoint: POST http://localhost:${PORT}/mcp`);
+  console.log(`Server card: http://localhost:${PORT}/.well-known/mcp-server.json`);
+  console.log(`Health: http://localhost:${PORT}/health`);
+});

@@ -17,6 +17,8 @@
     "ui:build": "npm run build --workspace=@doctor-agent/ui",
     "ui:preview": "npm run preview --workspace=@doctor-agent/ui",
     "mcp:serve": "npm run start --workspace=@doctor-agent/mcp-server",
-    "a2a:serve": "npm run start --workspace=@doctor-agent/a2a-agent"
+    "mcp:dev": "npm run dev --workspace=@doctor-agent/mcp-server",
+    "a2a:serve": "npm run start --workspace=@doctor-agent/a2a-agent",
+    "a2a:dev": "npm run dev --workspace=@doctor-agent/a2a-agent"
   }
 }
