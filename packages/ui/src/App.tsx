@@ -4,19 +4,12 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { auth, signInWithGoogle } from './lib/firebase';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
   Stethoscope, 
-  Settings, 
-  LogOut, 
-  Plus, 
-  Search,
   Activity,
   Mic,
-  FileText,
   Database,
   Wrench,
   MessageSquare,
@@ -31,8 +24,7 @@ import FhirExplorer from './components/FhirExplorer';
 import ClinicalTools from './components/ClinicalTools';
 import A2aAgentChat from './components/A2aAgentChat';
 import SystemStatus from './components/SystemStatus';
-import { FhirConfig } from './services/apiClient';
-import { MCP_URL, A2A_URL, CORE_URL } from './services/apiClient';
+import { FhirConfig, MCP_URL, A2A_URL, CORE_URL } from './services/apiClient';
 
 type Tab = 'dashboard' | 'patients' | 'scribe' | 'fhir' | 'tools' | 'a2a' | 'status' | 'settings';
 
@@ -43,8 +35,6 @@ interface FhirSettings {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [fhirSettings, setFhirSettings] = useState<FhirSettings>(() => {
     try {
@@ -55,14 +45,6 @@ export default function App() {
     }
   });
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -76,40 +58,6 @@ export default function App() {
   const fhirConfig: FhirConfig | null = fhirSettings.serverUrl
     ? { serverUrl: fhirSettings.serverUrl, accessToken: fhirSettings.accessToken, patientId: fhirSettings.patientId }
     : null;
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="w-12 h-12 border-4 border-medical-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div id="login-screen" className="flex flex-col items-center justify-center min-h-screen bg-slate-950 medical-grid relative overflow-hidden">
-        <div className="absolute inset-0 opacity-20 scanline"></div>
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="p-10 bg-slate-900 border border-slate-800 rounded-sm shadow-2xl max-w-sm w-full text-center relative z-10"
-        >
-          <div className="w-16 h-16 bg-sky-500 rounded-sm flex items-center justify-center mx-auto mb-6 shadow-lg shadow-sky-500/20">
-            <Stethoscope className="text-white w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold text-white mb-1 tracking-tighter uppercase font-mono">Agent-Med <span className="text-slate-500 text-xs font-normal">v4.2</span></h1>
-          <p className="text-emerald-500 font-mono text-[10px] mb-8 uppercase tracking-widest animate-pulse">System Boot Sequence Active...</p>
-          
-          <button 
-            onClick={signInWithGoogle}
-            className="w-full py-3 px-6 bg-sky-600 hover:bg-sky-500 text-white rounded-sm font-bold text-xs uppercase tracking-widest transition-all duration-200 flex items-center justify-center gap-3 active:scale-[0.98]"
-          >
-            Authenticate Google ID
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
@@ -125,7 +73,7 @@ export default function App() {
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> SYSTEM SYNCED</span>
           </div>
           <div className="text-right">
-            <p className="text-xs font-bold">{user.displayName}</p>
+            <p className="text-xs font-bold">Local Session</p>
             <p className="text-[10px] text-slate-400 uppercase tracking-tighter">Clinical Provider</p>
           </div>
         </div>
@@ -186,16 +134,6 @@ export default function App() {
               active={activeTab === 'settings'} 
               onClick={() => setActiveTab('settings')} 
             />
-          </div>
-
-          <div className="mt-auto pt-4 border-t border-slate-100">
-            <button 
-              onClick={() => signOut(auth)}
-              className="w-full flex items-center gap-3 px-4 py-2 text-slate-500 hover:text-red-500 transition-colors rounded-sm"
-            >
-              <LogOut size={16} />
-              <span className="text-xs font-bold uppercase tracking-wider">De-Authenticate</span>
-            </button>
           </div>
         </nav>
 

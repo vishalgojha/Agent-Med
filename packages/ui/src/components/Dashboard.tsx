@@ -1,19 +1,28 @@
 import React, { useState } from 'react';
-import { useCollection } from 'react-firebase-hooks/firestore';
-import { collection, query, where, orderBy, limit } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
 import { motion } from 'motion/react';
 import { Users, FileText, Activity, Clock } from 'lucide-react';
 
+interface Patient {
+  id: string;
+  name: string;
+  dob: string;
+  gender: string;
+}
+
+function loadPatients(): Patient[] {
+  try {
+    const raw = localStorage.getItem('agent-med-patients');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function Dashboard() {
-  const user = auth.currentUser;
-  
-  const [patientsValue] = useCollection(
-    query(collection(db, 'patients'), where('providerId', '==', user?.uid || ''), limit(10))
-  );
+  const patients = loadPatients();
 
   const stats = [
-    { label: 'Active Patients', value: patientsValue?.size || 0, icon: <Users className="text-blue-600" />, trend: '+12% this month' },
+    { label: 'Active Patients', value: patients.length, icon: <Users className="text-blue-600" />, trend: 'local storage' },
     { label: 'Encounters Today', value: '4', icon: <FileText className="text-emerald-600" />, trend: '2 remaining' },
     { label: 'Avg Voice Scribe', value: '98%', icon: <Activity className="text-amber-600" />, trend: 'Accuracy rate' },
   ];
@@ -25,7 +34,7 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight uppercase">Physician Overview</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Provider: Dr. {user?.displayName?.split(' ').pop()} • Node: AIS-PRO-01</p>
+            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Provider: Local Session • Node: AIS-PRO-01</p>
           </div>
         </div>
         <div className="text-right">
@@ -49,7 +58,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-end gap-2">
               <h3 className="text-2xl font-bold text-slate-900 leading-none">{stat.value}</h3>
-              <p className="text-[10px] text-slate-400 font-mono mb-0.5">{stat.trend.split(' ').slice(0, 2).join(' ')}</p>
+              <p className="text-[10px] text-slate-400 font-mono mb-0.5">{stat.trend}</p>
             </div>
           </motion.div>
         ))}
@@ -66,18 +75,17 @@ export default function Dashboard() {
         <div className="lg:col-span-8 panel p-0 overflow-hidden flex flex-col">
           <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
             <h2 className="label-caps !mb-0">Patient Queue & Recent Ingests</h2>
-            <button className="text-[10px] font-bold text-sky-600 hover:underline uppercase tracking-wider">Expand DB</button>
           </div>
           <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto">
-            {patientsValue?.docs.map((doc) => (
+            {patients.map((doc) => (
               <div key={doc.id} className="flex items-center justify-between p-3 border border-slate-100 bg-slate-50/30 rounded-sm hover:bg-slate-50 transition-colors cursor-pointer group">
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 bg-white border border-slate-200 rounded-sm flex items-center justify-center text-xs font-bold text-slate-500 uppercase">
-                    {doc.data().name.charAt(0)}
+                    {doc.name.charAt(0)}
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-slate-900">{doc.data().name}</p>
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">UID: {doc.id.slice(0, 8)} • DOB: {doc.data().dob}</p>
+                    <p className="text-xs font-bold text-slate-900">{doc.name}</p>
+                    <p className="text-[10px] font-mono text-slate-400 uppercase">UID: {doc.id.slice(0, 8)} • DOB: {doc.dob}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-6 pr-2">
@@ -92,9 +100,9 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
-            {patientsValue?.empty && (
+            {patients.length === 0 && (
               <div className="py-20 text-center">
-                <p className="text-xs font-mono text-slate-400">0 RECORDS RETURNED FROM CENTRAL REPOSITORY</p>
+                <p className="text-xs font-mono text-slate-400">0 RECORDS RETURNED FROM LOCAL REPOSITORY</p>
               </div>
             )}
           </div>

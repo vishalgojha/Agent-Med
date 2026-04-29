@@ -1,28 +1,57 @@
-import React, { useState } from 'react';
-import { useCollection } from 'react-firebase-hooks/firestore';
-import { collection, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Plus, UserPlus, Filter, X, ChevronRight } from 'lucide-react';
+import { Search, UserPlus, X, ChevronRight } from 'lucide-react';
+
+interface Patient {
+  id: string;
+  name: string;
+  dob: string;
+  gender: string;
+  medicalHistory: string;
+  createdAt: string;
+}
+
+const STORAGE_KEY = 'agent-med-patients';
+
+function loadPatients(): Patient[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePatients(patients: Patient[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(patients));
+}
 
 export default function PatientList() {
-  const user = auth.currentUser;
+  const [patients, setPatients] = useState<Patient[]>(loadPatients);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  
-  const [patientsValue, loading] = useCollection(
-    query(collection(db, 'patients'), where('providerId', '==', user?.uid || ''))
+
+  const filteredPatients = patients.filter((p) =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredPatients = patientsValue?.docs
-    .filter(doc => doc.data().name.toLowerCase().includes(searchTerm.toLowerCase())) || [];
+  const addPatient = (patient: Omit<Patient, 'id' | 'createdAt'>) => {
+    const newPatient: Patient = {
+      ...patient,
+      id: `px_${Date.now().toString(36)}`,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...patients, newPatient];
+    setPatients(updated);
+    savePatients(updated);
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 uppercase tracking-tight">Patient Repository</h1>
-          <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1 italic">Accessing central medical records node: AIS-NODE-PX</p>
+          <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1 italic">{patients.length} records stored locally</p>
         </div>
         <button 
           onClick={() => setIsAddModalOpen(true)}
@@ -38,78 +67,62 @@ export default function PatientList() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold" size={14} />
           <input 
             type="text" 
-            placeholder="Search Registry (Name, ID, DOB)..." 
+            placeholder="Search Registry (Name, ID)..." 
             className="w-full pl-10 pr-4 py-2 bg-transparent outline-none text-xs font-mono text-slate-700 placeholder:text-slate-300 uppercase tracking-tight"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <button className="px-3 py-2 text-slate-400 hover:text-sky-600 transition-all border-l border-slate-100">
-          <Filter size={14} />
-        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {loading ? (
-           Array(6).fill(0).map((_, i) => (
-            <div key={i} className="h-16 bg-white rounded-sm animate-pulse border border-slate-100" />
-           ))
-        ) : filteredPatients.map((doc, i) => (
+        {filteredPatients.map((p) => (
           <motion.div
-            key={doc.id}
+            key={p.id}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="panel group px-4 py-3 hover:border-sky-500 transition-all cursor-pointer flex items-center justify-between border-l-4 border-l-transparent hover:border-l-sky-500"
           >
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-slate-50 border border-slate-100 rounded-sm flex items-center justify-center font-bold text-xs text-slate-400 group-hover:bg-sky-50 group-hover:text-sky-600">
-                {doc.data().name.charAt(0)}
+                {p.name.charAt(0)}
               </div>
               <div>
-                <h3 className="text-xs font-bold text-slate-900 uppercase leading-none">{doc.data().name}</h3>
-                <p className="text-[9px] font-mono text-slate-400 mt-1 uppercase">DOB: {doc.data().dob} • {doc.data().gender.charAt(0)}</p>
+                <h3 className="text-xs font-bold text-slate-900 uppercase leading-none">{p.name}</h3>
+                <p className="text-[9px] font-mono text-slate-400 mt-1 uppercase">DOB: {p.dob} • {p.gender.charAt(0)}</p>
               </div>
             </div>
             <ChevronRight className="text-slate-200 group-hover:text-sky-500" size={14} />
           </motion.div>
         ))}
+        {filteredPatients.length === 0 && (
+          <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
+            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">No patients found. Enroll a new patient to get started.</p>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>
         {isAddModalOpen && (
-          <AddPatientModal onClose={() => setIsAddModalOpen(false)} />
+          <AddPatientModal onClose={() => setIsAddModalOpen(false)} onAdd={addPatient} />
         )}
       </AnimatePresence>
     </div>
   );
 }
 
-function AddPatientModal({ onClose }: { onClose: () => void }) {
+function AddPatientModal({ onClose, onAdd }: { onClose: () => void; onAdd: (p: Omit<Patient, 'id' | 'createdAt'>) => void }) {
   const [formData, setFormData] = useState({
     name: '',
     dob: '',
     gender: 'Male',
     medicalHistory: ''
   });
-  const [saving, setSaving] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    try {
-      await addDoc(collection(db, 'patients'), {
-        ...formData,
-        providerId: auth.currentUser?.uid,
-        createdAt: serverTimestamp(),
-        allergies: [],
-        bloodType: ''
-      });
-      onClose();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSaving(false);
-    }
+    onAdd(formData);
+    onClose();
   };
 
   return (
@@ -177,10 +190,9 @@ function AddPatientModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           <button 
-            disabled={saving}
-            className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-sm font-bold text-xs uppercase tracking-widest shadow-lg shadow-sky-500/20 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-sm font-bold text-xs uppercase tracking-widest shadow-lg shadow-sky-500/20 transition-all flex items-center justify-center gap-2"
           >
-            {saving ? 'Processing Enrollment...' : 'Commit Record'}
+            Commit Record
           </button>
         </form>
       </motion.div>

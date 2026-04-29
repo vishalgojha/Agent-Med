@@ -1,13 +1,47 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useCollection } from 'react-firebase-hooks/firestore';
-import { collection, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mic, Square, Save, RotateCcw, Brain, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Mic, Square, Save, Brain } from 'lucide-react';
 import { analyzeEncounter, refineTranscription, EncounterAnalysis } from '../services/geminiService';
 
+interface Patient {
+  id: string;
+  name: string;
+}
+
+interface Encounter {
+  id: string;
+  patientId: string;
+  transcript: string;
+  summary: string;
+  aiAnalysis: string;
+  createdAt: string;
+}
+
+function loadPatients(): Patient[] {
+  try {
+    const raw = localStorage.getItem('agent-med-patients');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadEncounters(): Encounter[] {
+  try {
+    const raw = localStorage.getItem('agent-med-encounters');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveEncounter(encounter: Encounter) {
+  const existing = loadEncounters();
+  existing.push(encounter);
+  localStorage.setItem('agent-med-encounters', JSON.stringify(existing));
+}
+
 export default function AmbientScribe() {
-  const user = auth.currentUser;
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -17,10 +51,7 @@ export default function AmbientScribe() {
   const [step, setStep] = useState<'setup' | 'recording' | 'review'>('setup');
 
   const recognitionRef = useRef<any>(null);
-
-  const [patientsValue] = useCollection(
-    query(collection(db, 'patients'), where('providerId', '==', user?.uid || ''))
-  );
+  const patients = loadPatients();
 
   useEffect(() => {
     if (typeof window !== 'undefined' && ('WebkitSpeechRecognition' in window || 'speechRecognition' in window)) {
@@ -81,28 +112,22 @@ export default function AmbientScribe() {
     }
   };
 
-  const saveEncounter = async () => {
+  const saveEncounterToStorage = () => {
     if (!selectedPatientId || !analysis) return;
     
-    try {
-      await addDoc(collection(db, `patients/${selectedPatientId}/encounters`), {
-        patientId: selectedPatientId,
-        providerId: user?.uid,
-        transcript,
-        summary: analysis.summary,
-        aiAnalysis: JSON.stringify(analysis),
-        status: 'completed',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-      // Reset
-      setStep('setup');
-      setAnalysis(null);
-      setTranscript('');
-      setSelectedPatientId('');
-    } catch (err) {
-      console.error(err);
-    }
+    saveEncounter({
+      id: `enc_${Date.now().toString(36)}`,
+      patientId: selectedPatientId,
+      transcript,
+      summary: analysis.summary,
+      aiAnalysis: JSON.stringify(analysis),
+      createdAt: new Date().toISOString(),
+    });
+
+    setStep('setup');
+    setAnalysis(null);
+    setTranscript('');
+    setSelectedPatientId('');
   };
 
   return (
@@ -172,7 +197,7 @@ export default function AmbientScribe() {
 
               {step === 'review' && (
                 <button 
-                  onClick={saveEncounter}
+                  onClick={saveEncounterToStorage}
                   disabled={!selectedPatientId || processing}
                   className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-sm font-bold text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40"
                 >
@@ -204,8 +229,8 @@ export default function AmbientScribe() {
                 onChange={e => setSelectedPatientId(e.target.value)}
               >
                 <option value="">-- UNKNOWN --</option>
-                {patientsValue?.docs.map(doc => (
-                  <option key={doc.id} value={doc.id}>{doc.data().name}</option>
+                {patients.map(doc => (
+                  <option key={doc.id} value={doc.id}>{doc.name}</option>
                 ))}
               </select>
             </div>
