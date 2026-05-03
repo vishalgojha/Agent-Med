@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Shield, Send, Brain, FileText, Loader2, AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react';
 import { callMcpTool, FhirConfig, McpToolCallResult } from '../services/apiClient';
 

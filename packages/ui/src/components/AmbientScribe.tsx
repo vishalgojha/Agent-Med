@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, Square, Save, Brain } from 'lucide-react';
 import { analyzeEncounter, refineTranscription, EncounterAnalysis } from '../services/geminiService';
 

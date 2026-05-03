@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search, UserPlus, X, ChevronRight, Trash2, Edit2, Upload, Camera } from 'lucide-react';
 
 interface Patient {

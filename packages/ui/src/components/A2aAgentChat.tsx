@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Send, Bot, User, Loader2, AlertTriangle, Sparkles, ChevronRight, RefreshCw, Zap } from 'lucide-react';
 import { callA2AAgent, FhirConfig, A2ATaskResult, A2A_URL } from '../services/apiClient';
 

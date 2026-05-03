@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Search, Activity, Pill, AlertTriangle, Calendar, User, Stethoscope, ChevronRight, Eye, Loader2, Settings, RefreshCw } from 'lucide-react';
 import { callMcpTool, FhirConfig, McpToolCallResult } from '../services/apiClient';
 

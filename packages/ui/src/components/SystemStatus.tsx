@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Activity, CheckCircle2, XCircle, Loader2, Server, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
 import { checkHealths, getMcpServerCard, getA2AAgentCard, MCP_URL, A2A_URL, CORE_URL } from '../services/apiClient';
 
