@@ -1,7 +1,13 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+
 async function main() {
   try {
-    const mod = await import("../dist/index.js");
+    const mod = require("../dist/index.js");
     await mod.runCli(process.argv);
   } catch (error) {
     const e = error instanceof Error ? error : new Error(String(error));

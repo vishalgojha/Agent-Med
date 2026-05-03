@@ -1,7 +1,7 @@
 {
   "name": "@agent-med/core",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "bin": {
     "agent-med": "./bin/agent-med.js"
@@ -10,7 +10,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/tests/*.spec.ts",
     "start": "tsx src/index.ts",
