@@ -13,12 +13,19 @@ interface ServiceStatus {
   error?: string;
 }
 
+interface AuditLog {
+  timestamp: string;
+  action: string;
+  user: string;
+  details: string;
+}
+
 export default function SystemStatus() {
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [showAuditTrail, setShowAuditTrail] = useState(false);
-  const [auditLogs, setAuditLogs] = useState<Array<{timestamp: string; action: string; user: string; details: string}>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[] | null>(null);
 
   const loadAuditLogs = async () => {
     try {
@@ -235,7 +242,7 @@ export default function SystemStatus() {
                 <span>User</span>
                 <span>Details</span>
               </div>
-              {auditLogs.map((log, i) => (
+              {(auditLogs ?? []).map((log, i) => (
                 <div key={i} className="grid grid-cols-4 gap-2 py-1 border-b border-slate-800 last:border-0">
                   <span className="text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</span>
                   <span className="text-sky-400">{log.action}</span>
@@ -245,7 +252,7 @@ export default function SystemStatus() {
               ))}
             </div>
             <p className="text-[10px] text-slate-400 font-mono">
-              {auditLogs.length} events • HIPAA audit logging {auditLogs.length > 0 ? 'active' : 'pending'}
+              {(auditLogs ?? []).length} events • HIPAA audit logging {(auditLogs ?? []).length > 0 ? 'active' : 'pending'}
             </p>
           </motion.div>
         )}

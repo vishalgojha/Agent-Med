@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 15, 23, 42;
+  --background-start-rgb: 248, 250, 252;
+  --background-end-rgb: 248, 250, 252;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-start-rgb));
+}
+
+@layer components {
+  .panel {
+    @apply bg-white border border-slate-200 rounded-sm shadow-sm;
+  }
+  .label-caps {
+    @apply text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 block;
+  }
+  .data-mono {
+    @apply font-mono text-[12px] leading-tight;
+  }
+  .vital-badge {
+    @apply border-l-4 border-sky-500 bg-sky-50/50 p-3;
+  }
+  .terminal-log {
+    @apply bg-slate-950 text-emerald-400 font-mono text-[12px] p-4 rounded-sm border border-slate-800;
+  }
+}
+
+.medical-grid {
+  background-image: radial-gradient(circle at 1px 1px, #e2e8f0 1px, transparent 0);
+  background-size: 32px 32px;
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.scanline::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to bottom, transparent, rgba(16, 185, 129, 0.05), transparent);
+  animation: scanline 4s linear infinite;
+  pointer-events: none;
+}

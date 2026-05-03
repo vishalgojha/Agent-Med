@@ -1,6 +1,6 @@
-const MCP_URL = (import.meta as any).env?.VITE_MCP_URL || 'http://localhost:3002';
-const A2A_URL = (import.meta as any).env?.VITE_A2A_URL || 'http://localhost:3100';
-const CORE_URL = (import.meta as any).env?.VITE_CORE_URL || 'http://localhost:3001';
+const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL || 'http://localhost:3002';
+const A2A_URL = process.env.NEXT_PUBLIC_A2A_URL || 'http://localhost:3100';
+const CORE_URL = process.env.NEXT_PUBLIC_CORE_URL || 'http://localhost:3001';
 
 export interface FhirConfig {
   serverUrl: string;
