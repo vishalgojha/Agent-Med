@@ -21,6 +21,111 @@
   @apply bg-slate-950 text-emerald-400 font-mono text-[12px] p-4 rounded-sm border border-slate-800;
 }
 
+/* Dark mode styles */
+.dark {
+  --color-bg-primary: #0f172a;
+  --color-bg-secondary: #1e293b;
+  --color-bg-panel: #1e293b;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-border: #334155;
+}
+
+.dark body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+.dark .panel {
+  background-color: var(--color-bg-panel);
+  border-color: var(--color-border);
+}
+
+.dark .medical-grid {
+  background-image: radial-gradient(circle at 1px 1px, #334155 1px, transparent 0);
+}
+
+.dark .bg-slate-50 {
+  background-color: #1e293b;
+}
+
+.dark .bg-slate-100 {
+  background-color: #334155;
+}
+
+.dark .bg-white {
+  background-color: #1e293b;
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-slate-600 {
+  color: #f1f5f9;
+}
+
+.dark .text-slate-500,
+.dark .text-slate-400 {
+  color: #94a3b8;
+}
+
+.dark .border-slate-200,
+.dark .border-slate-300 {
+  border-color: #334155;
+}
+
+.dark .bg-slate-900 {
+  background-color: #0f172a;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #1e293b;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+
+.dark input:focus,
+.dark textarea:focus,
+.dark select:focus {
+  border-color: #0ea5e9;
+}
+
+.dark .terminal-log {
+  background-color: #0f172a;
+  border-color: #334155;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .sidebar-mobile {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  
+  .sidebar-mobile.open {
+    transform: translateX(0);
+  }
+  
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+  }
+  
+  .sidebar-overlay.open {
+    display: block;
+  }
+}
+
 .medical-grid {
   background-image: radial-gradient(circle at 1px 1px, #e2e8f0 1px, transparent 0);
   background-size: 32px 32px;

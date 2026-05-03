@@ -80,10 +80,12 @@ npm run serve   # starts API on port 3001
 ### Status
 - Health monitoring for all services
 - Latency metrics and system status
+- **Audit Trail** for HIPAA compliance (collapsible view)
 
 ### Settings
 - FHIR server configuration
 - SHARP context setup
+- **Dark/Light mode** toggle (persists to localStorage)
 
 ---
 

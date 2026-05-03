@@ -14,7 +14,9 @@ import {
   Wrench,
   MessageSquare,
   Monitor,
-  Shield
+  Shield,
+  Moon,
+  Sun
 } from 'lucide-react';
 
 import PatientList from './components/PatientList';
@@ -36,6 +38,14 @@ interface FhirSettings {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      const stored = localStorage.getItem('dark-mode');
+      return stored ? JSON.parse(stored) : false;
+    } catch {
+      return false;
+    }
+  });
   const [fhirSettings, setFhirSettings] = useState<FhirSettings>(() => {
     try {
       const stored = localStorage.getItem('fhir-settings');
@@ -45,6 +55,7 @@ export default function App() {
     }
   });
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -55,6 +66,15 @@ export default function App() {
     localStorage.setItem('fhir-settings', JSON.stringify(fhirSettings));
   }, [fhirSettings]);
 
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('dark-mode', JSON.stringify(darkMode));
+  }, [darkMode]);
+
   const fhirConfig: FhirConfig | null = fhirSettings.serverUrl
     ? { serverUrl: fhirSettings.serverUrl, accessToken: fhirSettings.accessToken, patientId: fhirSettings.patientId }
     : null;
@@ -62,12 +82,22 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
       {/* Top OS Header */}
-      <header className="h-14 bg-slate-900 text-white flex items-center justify-between px-6 shrink-0 border-b border-slate-800">
-        <div className="flex items-center gap-4">
+      <header className="h-14 bg-slate-900 text-white flex items-center justify-between px-4 md:px-6 shrink-0 border-b border-slate-800">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 hover:bg-slate-700 rounded-sm">
+            <Activity size={18} />
+          </button>
           <div className="w-8 h-8 bg-sky-500 rounded-sm flex items-center justify-center font-bold text-sm">AM</div>
-          <h1 className="text-base font-bold tracking-tight uppercase">Agent-Med <span className="text-slate-500 font-normal text-xs ml-1">OS v4.2.0</span></h1>
+          <h1 className="text-base font-bold tracking-tight uppercase hidden sm:block">Agent-Med <span className="text-slate-500 font-normal text-xs ml-1">OS v4.2.0</span></h1>
         </div>
         <div className="flex items-center gap-8">
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-sm hover:bg-slate-700 transition-colors"
+          >
+            {darkMode ? <Sun size={14} /> : <Moon size={14} />}
+            <span className="text-[10px] font-bold uppercase">{darkMode ? 'Light' : 'Dark'}</span>
+          </button>
           <div className="hidden md:flex gap-4 text-[10px] font-mono">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> AGENT ACTIVE</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> SYSTEM SYNCED</span>
@@ -80,8 +110,13 @@ export default function App() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
+        {/* Mobile Overlay */}
+        {sidebarOpen && (
+          <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
+        )}
+
         {/* Sidebar Controls */}
-        <nav className="w-64 bg-white border-r border-slate-200 flex flex-col p-3 shrink-0">
+        <nav className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-50 md:z-auto w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col p-3 shrink-0 h-full transition-transform duration-300`}>
           <div className="space-y-1 flex-grow">
             <p className="label-caps px-4 py-2 mt-4">Command Center</p>
             <SidebarLink 
@@ -266,11 +301,11 @@ function SidebarLink({ icon, label, active, onClick }: {
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={() => { onClick(); setSidebarOpen(false); }}
       className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-sm transition-all duration-150 group ${
         active 
-          ? 'bg-slate-100 text-sky-600 border-l-2 border-sky-600' 
-          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-2 border-transparent'
+          ? 'bg-slate-100 dark:bg-slate-700 text-sky-600 border-l-2 border-sky-600' 
+          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-100 border-l-2 border-transparent'
       }`}
     >
       <span className={`${active ? 'text-sky-600' : 'text-slate-400 group-hover:text-slate-600'}`}>{icon}</span>

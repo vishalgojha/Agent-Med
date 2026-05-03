@@ -9,8 +9,25 @@ interface ClinicalToolsProps {
 
 type Tool = 'scribe' | 'prior-auth' | 'follow-up' | 'decision';
 
+type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+interface RiskGate {
+  level: RiskLevel;
+  label: string;
+  requiresConfirmation: boolean;
+  color: string;
+}
+
+const riskGates: RiskGate[] = [
+  { level: 'LOW', label: 'Low Risk', requiresConfirmation: false, color: 'emerald' },
+  { level: 'MEDIUM', label: 'Medium Risk', requiresConfirmation: false, color: 'amber' },
+  { level: 'HIGH', label: 'High Risk', requiresConfirmation: true, color: 'rose' },
+];
+
 export default function ClinicalTools({ fhirConfig }: ClinicalToolsProps) {
   const [activeTool, setActiveTool] = useState<Tool>('decision');
+  const [activeRiskLevel, setActiveRiskLevel] = useState<RiskLevel>('LOW');
+  const [confirmedHighRisk, setConfirmedHighRisk] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +75,47 @@ export default function ClinicalTools({ fhirConfig }: ClinicalToolsProps) {
           <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">
             {isConnected ? `FHIR Context Active: ${fhirConfig.patientId ?? 'No patient ID'}` : 'Configure FHIR connection in Settings'}
           </p>
+        </div>
+      </div>
+
+      {/* Risk Gate Selector */}
+      <div className="panel p-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Risk Gate:</span>
+          <div className="flex gap-2">
+            {riskGates.map((gate) => (
+              <button
+                key={gate.level}
+                onClick={() => {
+                  setActiveRiskLevel(gate.level);
+                  if (gate.level !== 'HIGH') setConfirmedHighRisk(false);
+                }}
+                className={`px-3 py-1.5 rounded-sm text-[10px] font-bold uppercase tracking-wider transition-all ${
+                  activeRiskLevel === gate.level
+                    ? gate.level === 'HIGH' 
+                      ? 'bg-rose-500 text-white' 
+                      : gate.level === 'MEDIUM'
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-emerald-500 text-white'
+                    : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                }`}
+              >
+                {gate.requiresConfirmation && <AlertTriangle size={10} className="inline mr-1" />}
+                {gate.label}
+              </button>
+            ))}
+          </div>
+          {activeRiskLevel === 'HIGH' && (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={confirmedHighRisk}
+                onChange={(e) => setConfirmedHighRisk(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              <span className="text-rose-600 font-bold">I confirm this HIGH risk action</span>
+            </label>
+          )}
         </div>
       </div>
 
